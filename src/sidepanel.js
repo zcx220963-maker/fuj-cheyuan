@@ -5,6 +5,20 @@
   let state = null;
   let busy = false;
   let tabFallbackTimer = null;
+  let autoNextTimer = null;
+  let interruptRequested = false;
+  let interruptMode = '';
+  let activeRunId = 0;
+  let pendingSleepEntries = new Set();
+
+  class InterruptedError extends Error {
+    constructor(message, mode) {
+      super(message || '操作已中断');
+      this.name = 'InterruptedError';
+      this.mode = mode || interruptMode || 'interrupt';
+      this.__interrupted = true;
+    }
+  }
 
   document.addEventListener('DOMContentLoaded', function () {
     try { init(); } catch (e) {
@@ -164,18 +178,12 @@
   }
 
   async function fillCurrentWithNavigation() {
-    // ============ 砍屎山：绝对不允许 paused=true 卡死流水线 ============
-    // 用户原话："填不填无所谓了，连下一步都不走，一直卡在这里"——
-    // 无论之前谁设了 paused=true，这里强制复位 running=true+paused=false，保证流程能往前推。
-    if (state.batch?.paused || (state.batch && state.batch.running === false)) {
-      logLine(
-        `[砍屎山·强制解卡] 检测到之前残留 paused=${state.batch?.paused || false} / running=${state.batch?.running || false}，` +
-        `按你要求强制恢复 running=true+paused=false，流水线绝不允许卡死在 waitingManualSubmit/creating。`,
-        'warn'
-      );
-      state = await VehicleStore.setBatch({ running: true, paused: false });
+    throwIfInterrupted();
+    if (state.batch?.paused || state.batch?.phase === 'paused') {
+      interruptRequested = true;
+      interruptMode = 'pause';
+      throw new InterruptedError('已暂停批量录入', 'pause');
     }
-    if (state.batch?.paused) return;    // 理论上上面已经清了，留个保险
     if (!state.rows.length) throw new Error('请先导入数据');
     const logTag = `[fill] row=${state.currentIndex + 1}/${state.rows.length} rowNumber=${state.rows[state.currentIndex]?.rowNumber || '-'} phase=${state.batch?.phase}`;
     console.log(logTag, 'start fillCurrentWithNavigation');
@@ -205,7 +213,7 @@
         taskLockId: newLockId,          // (a) batch 层面钉死
       },
     });
-    const row = state.rows[state.currentIndex];
+    let row = state.rows[state.currentIndex];
     if (!row) throw new Error('当前行不存在');
     logLine(`[主任务硬锁] 第${row.rowNumber}行车源大任务启动，taskLockId=${newLockId}。本 token 未匹配前，任何事件都不会标记该行为已提交。`, 'info');
     console.log(logTag, `taskLockId=${newLockId} 已写入 batch+row`);
@@ -268,6 +276,7 @@
         skipPersistStatus: true,       // 预填结果不写回 fillReport，保持干净
       });
     } catch (probeErr) {
+      if (isInterruptedError(probeErr)) throw probeErr;
       logLine(`[流程优化] ⚠️ Stage 1 PROBE_4 项填抛出异常：${probeErr?.message || String(probeErr)} → 按用户硬规则：只要CSV有brand/series/model就强行走直达创建。`, 'warn');
       probeReport = { ok: false, hit: 0, miss: PROBE_FIELDS.length, report: PROBE_FIELDS.map(f => ({ field: f, status: 'fail', message: 'Stage1异常：' + (probeErr?.message || String(probeErr)) })) };
       // 异常保护门槛同步降低：hasAllCreationPrerequisites（三值齐全）依然强制标全套；
@@ -344,6 +353,19 @@
           `) brandFound=${!!r.brandFound} seriesFound=${!!r.seriesFound} modelFound=${!!r.modelFound}`,
           r.empty ? 'warn' : 'info'
         );
+        const uiBrandText = String(r.brandText || '').trim();
+        if (r.scopeFound && r.brandFound && !r.brandEmpty && uiBrandText && uiBrandText !== row.brandName) {
+          const rows = [...state.rows];
+          rows[state.currentIndex] = {
+            ...rows[state.currentIndex],
+            brandName: uiBrandText,
+            brandConfirmed: true,
+          };
+          state = await VehicleStore.save({ rows });
+          row.brandName = uiBrandText;
+          row.brandConfirmed = true;
+          logLine(`[品牌校准] 以车源新增页当前真实选择品牌「${uiBrandText}」为准，覆盖导入/缓存品牌；后续创建车系/车型会使用该品牌。`, 'ok');
+        }
         if (r.empty) {
           const reason = [
             r.brandEmpty ? `品牌（当前="${r.brandText || '空'}"）` : null,
@@ -355,6 +377,7 @@
           logLine(`[流程优化][UI诊断] scopeFound=false（没找到车源新增表单区或页面未稳定）。这不代表车系/车型不存在，不再强制跳创建。`, 'warn');
         }
       } catch (uiErr) {
+        if (isInterruptedError(uiErr)) throw uiErr;
         logLine(`[流程优化][UI 兜底探测] VA_PROBE_UI_EMPTY_BRAND_SERIES_MODEL 消息异常：${uiErr?.message || String(uiErr)} → 按原流程走。`, 'warn');
       }
     }
@@ -500,7 +523,7 @@
               logLine(`[砍屎山] ✅ 车系skipReturn=true+取消：保持当前页面不动（不切回审核列表+新增），**不调用startSubmitWatchForRow，watcherBoundOnAddPage保持false**，避免"应该跳创建又跳回来了"和watcher误开闸。`, 'info');
             } else {
               // 只有 skipReturn=false（只有车系缺，后面没有车型要建）才切回新增页并挂 watcher
-              try { await openAddPageCore(); } catch (_e) { logLine(`补跳回新增页失败：${_e?.message || String(_e)}`, 'warn'); }
+              try { await openAddPageCore(); } catch (_e) { if (isInterruptedError(_e)) throw _e; logLine(`补跳回新增页失败：${_e?.message || String(_e)}`, 'warn'); }
             }
             state = await VehicleStore.setBatch({
               phase: 'waitingManualSubmit', running: true, paused: false,
@@ -526,7 +549,7 @@
               // ★ 同上：失败也一样，保持当前页，不开 watcher 闸
               logLine(`[砍屎山] ✅ 车系skipReturn=true+失败：保持当前页面不动（不切回审核列表+新增），**不调用startSubmitWatchForRow，watcherBoundOnAddPage保持false**，避免"应该跳创建又跳回来了"和watcher误开闸。请点侧边栏【重填当前行】重试。`, 'info');
             } else {
-              try { await openAddPageCore(); } catch (_e) { logLine(`补跳回新增页失败：${_e?.message || String(_e)}`, 'warn'); }
+              try { await openAddPageCore(); } catch (_e) { if (isInterruptedError(_e)) throw _e; logLine(`补跳回新增页失败：${_e?.message || String(_e)}`, 'warn'); }
             }
             state = await VehicleStore.setBatch({
               phase: 'waitingManualSubmit', running: true, paused: false,
@@ -595,6 +618,7 @@
           logLine(`[砍屎山] ⚠️ 车型未命中但测试表缺少品牌/车系/车型字段值，无法自动创建，停 waitingManualSubmit 请人工处理。`, 'warn');
         }
       } catch (e) {
+        if (isInterruptedError(e)) throw e;
         logLine(`[砍屎山] ❌ 直达创建脚本异常：${e?.message || String(e)}，流水线不暂停，回 waitingManualSubmit。`, 'error');
         await ensureSnapshot(snapshot, '直达创建异常后');
       }
@@ -626,7 +650,7 @@
           }
           if (!r.ok) {
             logLine(`[原子切回车源新增] ⚠️ 原子操作返回 ok=false → 再走旧兜底链路（openAddPageCore + VA_ENSURE_ON_ADD_FORM），确保不会卡住`, 'warn');
-            try { await openAddPageCore(); } catch (_) {}
+            try { await openAddPageCore(); } catch (_e) { if (isInterruptedError(_e)) throw _e; }
             await waitForPageReady();
             await waitForContentReady();
             await sleep(400);
@@ -634,14 +658,15 @@
               const en = await sendToActiveTab({ type: 'VA_ENSURE_ON_ADD_FORM', timeout: 15000 });
               const er = en?.result || {};
               logLine(`[旧兜底] finalLooksLike=${!!er.finalLooksLike} action="${er.action || '-'}" href=${er.href || '-'} msg="${er.message || ''}"`, er.finalLooksLike ? 'ok' : 'error');
-            } catch (e2) { logLine(`[旧兜底] VA_ENSURE_ON_ADD_FORM 异常：${e2?.message || String(e2)}`, 'warn'); }
+            } catch (e2) { if (isInterruptedError(e2)) throw e2; logLine(`[旧兜底] VA_ENSURE_ON_ADD_FORM 异常：${e2?.message || String(e2)}`, 'warn'); }
           } else {
             // looksLikeAddForm=true 已经命中，再给 DOM 稳定落地 400ms
             await sleep(400);
           }
         } catch (gotoErr) {
+          if (isInterruptedError(gotoErr)) throw gotoErr;
           logLine(`[原子切回车源新增] ❌ 消息异常：${gotoErr?.message || String(gotoErr)}，回退旧兜底链路`, 'error');
-          try { await openAddPageCore(); } catch (_) {}
+          try { await openAddPageCore(); } catch (_e) { if (isInterruptedError(_e)) throw _e; }
           await waitForPageReady();
           await waitForContentReady();
           await sleep(450);
@@ -814,6 +839,7 @@
     try {
       result = await sendToActiveTab({ type: 'VA_OPEN_ADD_FORM' });
     } catch (recordedError) {
+      if (isInterruptedError(recordedError)) throw recordedError;
       throw new Error(`录制点击链路失败：${recordedError.message || recordedError}`);
     }
 
@@ -951,9 +977,13 @@
     const fillOpts = {};
     if (fields) fillOpts.fields = fields;
     if (excludeFields) fillOpts.excludeFields = excludeFields;
-    // ★★【品牌复用】：如果本行品牌已被用户确认过（selectedBrand 回写过 row.brandName），后续填充/重填自动沿用，不再弹提示条等人工
+    // ★★【品牌隔离】：每一行都必须以“本行车源新增页人工选中的品牌”为准。
+    // brandConfirmed=false 时，content-admin 不能接受页面残留的上一行品牌，必须等待本行重新选择/确认。
     if (row.brandConfirmed && row.brandName) {
       fillOpts.confirmedBrandName = row.brandName;
+    } else {
+      fillOpts.requireFreshBrandSelection = true;
+      fillOpts.brandSelectionRowNumber = row.rowNumber || state.currentIndex + 1;
     }
     const resp = await sendToActiveTab({
       type: 'VA_FILL_ROW',
@@ -1253,7 +1283,7 @@
             if (skipReturnBecauseModelNext) {
               logLine(`[创建车系] ✅ skipReturn=true+取消：保持当前页面不动（不切回审核列表+新增），避免"应该跳创建又跳回来了"。请点侧边栏【重填当前行】重试。`, 'info');
             } else {
-              try { await openAddPageCore(); } catch (_e) { logLine(`补跳回新增页失败：${_e?.message || String(_e)}`, 'warn'); }
+              try { await openAddPageCore(); } catch (_e) { if (isInterruptedError(_e)) throw _e; logLine(`补跳回新增页失败：${_e?.message || String(_e)}`, 'warn'); }
             }
             state = await VehicleStore.setBatch({
               phase: 'waitingManualSubmit',
@@ -1275,7 +1305,7 @@
           if (skipReturnBecauseModelNext) {
             logLine(`[创建车系] ✅ skipReturn=true+失败：保持当前页面不动（不切回审核列表+新增），避免"应该跳创建又跳回来了"。请点侧边栏【重填当前行】重试。`, 'info');
           } else {
-            try { await openAddPageCore(); } catch (_e) { logLine(`补跳回新增页失败：${_e?.message || String(_e)}`, 'warn'); }
+            try { await openAddPageCore(); } catch (_e) { if (isInterruptedError(_e)) throw _e; logLine(`补跳回新增页失败：${_e?.message || String(_e)}`, 'warn'); }
           }
           state = await VehicleStore.setBatch({
             phase: 'waitingManualSubmit',
@@ -1291,13 +1321,14 @@
           logLine(`[创建车系] ✅ 成功：${resp.result.message}（当前行${snapshot.rowNumber}仍未推进）`, 'ok');
         }
       } catch (e) {
+        if (isInterruptedError(e)) throw e;
         logLine(`[创建车系] ❌ 脚本异常：${e?.message || String(e)}。堆栈：${e?.stack || '无堆栈'}，当前行${snapshot.rowNumber}仍保持未完成`, 'error');
         await ensureSnapshot(snapshot, '车系创建异常后');
         // ★ 同上：skipReturnBecauseModelNext=true 时脚本异常也不跳回新增页。
         if (skipReturnBecauseModelNext) {
           logLine(`[创建车系] ✅ skipReturn=true+脚本异常：保持当前页面不动（不切回审核列表+新增），避免"应该跳创建又跳回来了"。请点侧边栏【重填当前行】重试。`, 'info');
         } else {
-          try { await openAddPageCore(); } catch (_e) { logLine(`补跳回新增页失败：${_e?.message || String(_e)}`, 'warn'); }
+          try { await openAddPageCore(); } catch (_e) { if (isInterruptedError(_e)) throw _e; logLine(`补跳回新增页失败：${_e?.message || String(_e)}`, 'warn'); }
         }
       }
     }
@@ -1356,6 +1387,7 @@
             logLine(`[创建车型] ✅ 成功：${resp.result.message}（当前行${snapshot.rowNumber}仍未推进）`, 'ok');
           }
         } catch (e) {
+          if (isInterruptedError(e)) throw e;
           logLine(`[创建车型] ❌ 脚本异常：${e?.message || String(e)}。堆栈：${e?.stack || '无堆栈'}，当前行${snapshot.rowNumber}仍保持未完成`, 'error');
           await ensureSnapshot(snapshot, '车型创建异常后');
         }
@@ -1713,7 +1745,12 @@
     };
 
     const nextIndex = state.currentIndex + 1;
+    if (rows[nextIndex]) {
+      rows[nextIndex] = { ...rows[nextIndex], brandConfirmed: false };
+      logLine(`[品牌确认] 自动进入下一行前重置第${rows[nextIndex].rowNumber || nextIndex + 1}行 brandConfirmed=false：下一行必须重新在车源新增页人工选品牌，不能串到上一行。`, 'info');
+    }
     const completed = rows.filter(r => r.status === 'submitted').length;
+    throwIfInterrupted();
     state = await VehicleStore.save({
       rows,
       currentIndex: nextIndex,
@@ -1745,15 +1782,23 @@
     console.log(logTag, `→ advance prepare nextIndex=${nextIndex + 1}/${rows.length} nextRowNumber=${rows[nextIndex]?.rowNumber || '-'} running=${state.batch?.running} paused=${state.batch?.paused}`);
 
     if (state.batch?.running && !state.batch?.paused) {
-      setTimeout(() => {
+      const scheduleRunId = activeRunId;
+      autoNextTimer = setTimeout(() => {
+        autoNextTimer = null;
+        if (interruptRequested || activeRunId !== scheduleRunId) return;
         console.log(logTag, `→ setTimeout(800ms) fired → runBusy 调用 fillCurrentWithNavigation 进入下一行`);
         runBusy('自动进入下一条...', async () => {
+          throwIfInterrupted();
+          state = await VehicleStore.load();
+          if (!state.batch?.running || state.batch?.paused || state.batch?.phase === 'paused') throw new InterruptedError('自动进入下一条已被暂停/停止', interruptMode || 'pause');
           let lastErr = null;
           for (let attempt = 1; attempt <= 2; attempt++) {
             try {
+              throwIfInterrupted();
               await fillCurrentWithNavigation();
               return;
             } catch (e) {
+              if (isInterruptedError(e)) throw e;
               lastErr = e;
               logLine(`自动进入下一条失败（第${attempt}次）：${e.message || e}`, 'error');
               if (attempt < 2) {
@@ -1794,25 +1839,12 @@
 
   async function pauseBatch() {
     if (!state.rows.length) return warn('请先导入数据');
-    if (tabFallbackTimer) { clearTimeout(tabFallbackTimer); tabFallbackTimer = null; }
-    await stopSubmitWatchQuietly();
-    state = await VehicleStore.setBatch({
-      running: false,
-      paused: true,
-      phase: 'paused',
-      lastMessage: '已暂停批量录入',
-    });
-    logLine('已暂停批量录入', 'warn');
-    renderAll();
+    await requestInterrupt('pause', '已暂停批量录入');
   }
 
   async function stopBatch() {
-    if (!confirm('确定停止当前批量录入？已提交的行不会回退。')) return;
-    if (tabFallbackTimer) { clearTimeout(tabFallbackTimer); tabFallbackTimer = null; }
-    await stopSubmitWatchQuietly();
-    state = await VehicleStore.setBatch(resetBatch('idle', '批量录入已停止'));
-    logLine('批量录入已停止', 'warn');
-    renderAll();
+    if (!state.rows.length) return warn('请先导入数据');
+    await requestInterrupt('stop', '批量录入已停止');
   }
 
   async function moveCurrent(delta) {
@@ -1843,6 +1875,7 @@
   }
 
   async function sendToActiveTab(message) {
+    if (message?.type !== 'VA_ABORT_CURRENT_TASK' && message?.type !== 'VA_STOP_SUBMIT_WATCH') throwIfInterrupted();
     const tabId = await getTargetTabId();
 
     const trySend = async () => {
@@ -1851,6 +1884,8 @@
 
     // 第一次尝试
     let resp = await trySend();
+    if (resp?.aborted) throw new InterruptedError(resp.error || '页面自动化已中断', interruptMode || 'pause');
+    if (message?.type !== 'VA_ABORT_CURRENT_TASK' && message?.type !== 'VA_STOP_SUBMIT_WATCH') throwIfInterrupted();
     if (resp !== null) return resp;
 
     // content script 失联：先清除页面上的注入标记，再强制重新注入
@@ -1869,8 +1904,11 @@
 
     // 等待注入完成 + 消息监听器注册
     for (let i = 0; i < 10; i++) {
+      if (message?.type !== 'VA_ABORT_CURRENT_TASK' && message?.type !== 'VA_STOP_SUBMIT_WATCH') throwIfInterrupted();
       await sleep(300);
       resp = await trySend();
+      if (resp?.aborted) throw new InterruptedError(resp.error || '页面自动化已中断', interruptMode || 'pause');
+      if (message?.type !== 'VA_ABORT_CURRENT_TASK' && message?.type !== 'VA_STOP_SUBMIT_WATCH') throwIfInterrupted();
       if (resp !== null) return resp;
     }
 
@@ -2076,9 +2114,12 @@
     const hasRows = !!state.rows?.length;
     const batch = state.batch || {};
     const waiting = batch.phase === 'waitingManualSubmit';
+    const interruptiblePhase = ['opening', 'probing', 'filling', 'creating', 'waitingManualSubmit', 'nextRow', 'paused'].includes(batch.phase);
+    const canInterrupt = hasRows && (busy || batch.running || interruptiblePhase);
     setDisabled('btnStartBatch', busy || !hasRows || waiting || batch.phase === 'done');
-    setDisabled('btnPauseBatch', busy || !batch.running);
-    setDisabled('btnStopBatch', busy || (!batch.running && batch.phase !== 'waitingManualSubmit' && batch.phase !== 'paused'));
+    // 暂停/停止必须能在 busy 流程中点击，不能被 busy 禁用，否则无法止损。
+    setDisabled('btnPauseBatch', !canInterrupt || batch.phase === 'paused');
+    setDisabled('btnStopBatch', !canInterrupt);
     setDisabled('btnRefillCurrent', busy || !hasRows || state.currentIndex >= state.rows.length);
     setDisabled('btnPrev', busy || !hasRows || state.currentIndex <= 0);
     setDisabled('btnNext', busy || !hasRows || state.currentIndex >= state.rows.length - 1);
@@ -2092,8 +2133,77 @@
     if (el) el.disabled = !!disabled;
   }
 
+  function isInterruptedError(error) {
+    return error && (
+      error.name === 'InterruptedError' ||
+      error.__interrupted === true ||
+      error.aborted === true ||
+      error.__aborted === true ||
+      /页面自动化已中断|已暂停批量录入|批量录入已停止|操作已中断/.test(String(error.message || error.error || ''))
+    );
+  }
+
+  function interruptLabel() {
+    return interruptMode === 'stop' ? '批量录入已停止' : '已暂停批量录入';
+  }
+
+  function clearPendingTimers() {
+    if (tabFallbackTimer) { clearTimeout(tabFallbackTimer); tabFallbackTimer = null; }
+    if (autoNextTimer) { clearTimeout(autoNextTimer); autoNextTimer = null; }
+    pendingSleepEntries.forEach(entry => {
+      try { clearTimeout(entry.timer); } catch (e) {}
+      try { entry.reject(new InterruptedError(interruptLabel(), interruptMode)); } catch (e) {}
+    });
+    pendingSleepEntries.clear();
+  }
+
+  function throwIfInterrupted() {
+    if (interruptRequested) {
+      throw new InterruptedError(interruptLabel(), interruptMode);
+    }
+    const b = state?.batch || {};
+    if (b.paused || b.phase === 'paused') {
+      interruptRequested = true;
+      interruptMode = 'pause';
+      throw new InterruptedError('已暂停批量录入', 'pause');
+    }
+  }
+
+  async function sendAbortToActiveTab(mode) {
+    try {
+      const tabId = await getTargetTabId();
+      await chrome.tabs.sendMessage(tabId, { type: 'VA_ABORT_CURRENT_TASK', mode, reason: interruptLabel(), abortToken: activeRunId });
+    } catch (e) {}
+  }
+
+  async function requestInterrupt(mode, message) {
+    interruptRequested = true;
+    interruptMode = mode === 'stop' ? 'stop' : 'pause';
+    activeRunId++;
+    clearPendingTimers();
+    await stopSubmitWatchQuietly();
+    await sendAbortToActiveTab(interruptMode);
+    if (interruptMode === 'stop') {
+      state = await VehicleStore.setBatch(resetBatch('idle', message || '批量录入已停止'));
+    } else {
+      state = await VehicleStore.setBatch({
+        running: false,
+        paused: true,
+        phase: 'paused',
+        watcherBoundOnAddPage: false,
+        taskLockId: '',
+        lastMessage: message || '已暂停批量录入',
+      });
+    }
+    logLine(message || interruptLabel(), 'warn');
+    renderAll();
+  }
+
   async function runBusy(label, fn, options) {
     if (busy) return;
+    interruptRequested = false;
+    interruptMode = '';
+    const runId = ++activeRunId;
     busy = true;
     setStatus(label);
     updateButtons();
@@ -2129,12 +2239,17 @@
     }
     try {
       await fn();
+      throwIfInterrupted();
     } catch (e) {
-      warn(e.message || String(e));
-      logLine(e.message || String(e), 'error');
+      if (isInterruptedError(e)) {
+        logLine(e.message || interruptLabel(), 'warn');
+      } else {
+        warn(e.message || String(e));
+        logLine(e.message || String(e), 'error');
+      }
     } finally {
       if (safetyTimer) clearTimeout(safetyTimer);
-      busy = false;
+      if (activeRunId === runId || interruptRequested) busy = false;
       setStatus(state.rows?.length ? `${Math.min(state.currentIndex + 1, state.rows.length)}/${state.rows.length}` : '待导入');
       updateButtons();
     }
@@ -2169,6 +2284,9 @@
        * 任何残留/并发的 submitWatcher 消息拿不到当前 token，都会被锁死。
        */
       taskLockId: '',
+      watcherBoundOnAddPage: false,
+      lastAddPageUrl: '',
+      lastCreationFinishedAt: 0,
       completed: 0,
       failed: 0,
       startedAt: '',
@@ -2296,7 +2414,18 @@
     $('statusBadge').textContent = text;
   }
 
-  function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+  function sleep(ms) {
+    throwIfInterrupted();
+    return new Promise((resolve, reject) => {
+      const entry = { timer: null, reject };
+      entry.timer = setTimeout(() => {
+        pendingSleepEntries.delete(entry);
+        try { throwIfInterrupted(); } catch (e) { reject(e); return; }
+        resolve();
+      }, ms);
+      pendingSleepEntries.add(entry);
+    });
+  }
 
   function escapeHtml(value) {
     return String(value == null ? '' : value).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));

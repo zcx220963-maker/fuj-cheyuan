@@ -80,6 +80,17 @@
   let submitTimer = null;
   let submitClickHandler = null;
   let submitTimeoutId = null;
+  let pageAbortRequested = false;
+  let pageAbortReason = '';
+  let pageSleepEntries = new Set();
+
+  class PageAbortError extends Error {
+    constructor(message) {
+      super(message || pageAbortReason || '页面自动化已中断');
+      this.name = 'PageAbortError';
+      this.__aborted = true;
+    }
+  }
 
   // 页面内消息桥（用于 pagehide/beforeunload 兜底）—— 先移除旧的再注册新的
   if (window.__vaPageMsgHandler) {
@@ -116,23 +127,28 @@
     if (!msg || !String(msg.type || '').startsWith('VA_')) return false;
     (async () => {
       try {
+        if (msg.type === 'VA_ABORT_CURRENT_TASK') return sendResponse({ ok: true, result: abortCurrentTask(msg.reason || msg.mode || 'sidepanel-abort') });
         if (msg.type === 'VA_PING') return sendResponse({ ok: true, href: location.href, title: document.title });
-        if (msg.type === 'VA_OPEN_ADD_FORM') return sendResponse({ ok: true, result: await openAddForm() });
-        if (msg.type === 'VA_ENSURE_ON_ADD_FORM') return sendResponse({ ok: true, result: await ensureOnAddForm({}) });
-        if (msg.type === 'VA_FORCE_GOTO_VEHICLE_ADD_PAGE') return sendResponse({ ok: true, result: await forceGotoVehicleAddPage({}) });
+        if (msg.type === 'VA_OPEN_ADD_FORM') { resetPageAbort(); return sendResponse({ ok: true, result: await openAddForm() }); }
+        if (msg.type === 'VA_ENSURE_ON_ADD_FORM') { resetPageAbort(); return sendResponse({ ok: true, result: await ensureOnAddForm({}) }); }
+        if (msg.type === 'VA_FORCE_GOTO_VEHICLE_ADD_PAGE') { resetPageAbort(); return sendResponse({ ok: true, result: await forceGotoVehicleAddPage({}) }); }
         if (msg.type === 'VA_PROBE_UI_EMPTY_BRAND_SERIES_MODEL') return sendResponse({ ok: true, result: probeCurrentUIBrandSeriesModel() });
         if (msg.type === 'VA_WAIT_READY') return sendResponse({ ok: true, result: await waitForReady(msg.timeout || 15000) });
         if (msg.type === 'VA_PROBE_PAGE') return sendResponse({ ok: true, probe: probePage() });
-        if (msg.type === 'VA_FILL_ROW') return sendResponse({ ok: true, report: await fillRecordedRow(msg.row || {}, msg.options || {}) });
+        if (msg.type === 'VA_FILL_ROW') { resetPageAbort(); return sendResponse({ ok: true, report: await fillRecordedRow(msg.row || {}, msg.options || {}) }); }
         if (msg.type === 'VA_START_SUBMIT_WATCH') return sendResponse({ ok: true, result: startSubmitWatch(msg.row || {}) });
         if (msg.type === 'VA_STOP_SUBMIT_WATCH') return sendResponse({ ok: true, result: stopSubmitWatch('manual-stop') });
-        if (msg.type === 'VA_CREATE_SERIES') return sendResponse({ ok: true, result: await createSeries(msg.payload || {}) });
-        if (msg.type === 'VA_CREATE_MODEL') return sendResponse({ ok: true, result: await createModel(msg.payload || {}) });
-        if (msg.type === 'VA_NAVIGATE_AND_CREATE') return sendResponse({ ok: true, result: await navigateAndCreate(msg.payload || {}) });
+        if (msg.type === 'VA_CREATE_SERIES') { resetPageAbort(); return sendResponse({ ok: true, result: await createSeries(msg.payload || {}) }); }
+        if (msg.type === 'VA_CREATE_MODEL') { resetPageAbort(); return sendResponse({ ok: true, result: await createModel(msg.payload || {}) }); }
+        if (msg.type === 'VA_NAVIGATE_AND_CREATE') { resetPageAbort(); return sendResponse({ ok: true, result: await navigateAndCreate(msg.payload || {}) }); }
         if (msg.type === 'VA_WAIT_NAVIGATION') return sendResponse({ ok: true, result: await waitForNavigation(msg.target || '', msg.timeout || 15000) });
         sendResponse({ error: '未知消息: ' + msg.type });
       } catch (e) {
-        sendResponse({ error: e?.message || String(e) });
+        if (e?.name === 'PageAbortError' || e?.__aborted) {
+          sendResponse({ ok: false, aborted: true, error: e?.message || String(e) });
+        } else {
+          sendResponse({ error: e?.message || String(e) });
+        }
       }
     })();
     return true;
@@ -141,6 +157,7 @@
   chrome.runtime.onMessage.addListener(msgListener);
 
   async function openAddForm() {
+    throwIfPageAborted();
     const before = location.href;
     debugSubmit('open-add-form-start', { before });
     if (looksLikeAddForm()) {
@@ -153,6 +170,7 @@
     async function waitReadyAfterClick(msgIfTimeout) {
       const deadline = Date.now() + 15000;
       while (Date.now() < deadline) {
+      throwIfPageAborted();
         if (looksLikeAddForm()) return true;
         await sleep(500);
       }
@@ -251,6 +269,7 @@
    *     href: string }
    */
   async function ensureOnAddForm(_opts) {
+    throwIfPageAborted();
     const before = looksLikeAddForm();
     if (before) {
       return { alreadyOK: true, action: 'noop', finalLooksLike: true, href: location.href, message: '已在车源新增表单页，无需操作' };
@@ -265,7 +284,7 @@
         await sleep(300);
         if (looksLikeAddForm()) return { alreadyOK: false, action, finalLooksLike: true, href: location.href, message: `切审核列表tab成功，当前已在新增页：${tabBack.message}` };
       }
-    } catch (_) { /* ignore */ }
+    } catch (e) { ignoreUnlessPageAbort(e); /* ignore */ }
 
     // Step 2: 如果 looksLikeAddForm 还是 false → 看当前是不是已经在审核列表页（有新增按钮），点一下
     try {
@@ -281,7 +300,7 @@
           if (looksLikeAddForm()) return { alreadyOK: false, action, finalLooksLike: true, href: location.href, message: '审核列表页点"+新增库存车"成功进入新增页' };
         }
       }
-    } catch (_) { /* ignore */ }
+    } catch (e) { ignoreUnlessPageAbort(e); /* ignore */ }
 
     // Step 3: tabs 没审核列表 + 当前也没审核列表按钮 → 走模拟点击菜单 车源管理→审核列表
     try {
@@ -300,7 +319,7 @@
         }
         if (looksLikeAddForm()) return { alreadyOK: false, action, finalLooksLike: true, href: location.href, message: `菜单点击审核列表+新增库存车成功：${leaf.message}` };
       }
-    } catch (_) { /* ignore */ }
+    } catch (e) { ignoreUnlessPageAbort(e); /* ignore */ }
 
     // Step 4: 菜单也失败 → navigateInsideApp SPA 路由 + openAddForm 终极兜底
     try {
@@ -310,7 +329,7 @@
       const back = await openAddForm();
       if (back?.status !== 'not-found') action += '→open-add(' + String(back.status || 'unknown') + ')';
       await sleep(500);
-    } catch (_) { /* ignore */ }
+    } catch (e) { ignoreUnlessPageAbort(e); /* ignore */ }
 
     // Step 5: 最后一次核 looksLikeAddForm
     const finalLooks = looksLikeAddForm();
@@ -339,12 +358,14 @@
    *   本函数用【2 轮 × 7 步】硬保，最多 2 轮，每轮都要 looksLikeAuditList=true 才算切成功。
    */
   async function forceGotoVehicleAddPage(_opts) {
+    throwIfPageAborted();
     const logs = [];
     let finallyLooksLikeAuditList = false;
     let finallyLooksLikeAddForm = false;
     let finalAction = 'none';
 
     for (let round = 1; round <= 3; round++) {
+      throwIfPageAborted();
       logs.push(`--- 第 ${round}/3 轮纯点击切到车源新增页 ---`);
       // 先核：如果现在已经在新增表单页，就直接 return success
       if (looksLikeAddForm()) {
@@ -369,6 +390,7 @@
         const leafDeadline = Date.now() + 2500;
         let auditLeaf = null;
         while (Date.now() < leafDeadline && !auditLeaf) {
+      throwIfPageAborted();
           const auditCandidates = [...document.querySelectorAll('li, span, a, div, .ant-menu-item, [class*="menu-item"]')]
             .filter(isVisible)
             .map(el => {
@@ -410,7 +432,10 @@
           robustClick(addBtn);
           // 等 looksLikeAddForm=true，最多 12s（加 2s 留时间给表单 Drawer 滑入）
           const addDeadline = Date.now() + 12000;
-          while (Date.now() < addDeadline && !looksLikeAddForm()) await sleep(350);
+          while (Date.now() < addDeadline && !looksLikeAddForm()) {
+      throwIfPageAborted();
+      await sleep(350);
+    }
           finallyLooksLikeAddForm = looksLikeAddForm();
           logs.push(finallyLooksLikeAddForm
             ? `  ✓ looksLikeAddForm=true，已进入空白车源新增表单页`
@@ -527,7 +552,7 @@
             const labelOk = labelCandidates.some(l => String(l || '').length > 0 && rowText.includes(String(l)));
             if (!labelOk) continue; // 控件串到别的行了，继续试下一个 label
           }
-        } catch (_) {}
+        } catch (e) { ignoreUnlessPageAbort(e); }
         lastResult = ctrl;
         lastResult.__matchedLabel = labelName;
         lastResult.__matchedIndex = i;
@@ -557,7 +582,7 @@
         try {
           const wrap = lastResult.closest?.('tr, td, .ant-form-item, .el-form-item, .ant-row, .ant-col, [class*="form-item"]') || lastResult.parentElement;
           if (wrap) text = cleanText(wrap.innerText || wrap.textContent || '');
-        } catch (_) {}
+        } catch (e) { ignoreUnlessPageAbort(e); }
       }
       return {
         found: true,
@@ -629,6 +654,7 @@
         }
         steps.push(`模拟点击菜单失败，继续降级：${leaf.message}`);
       } catch (e) {
+        if (isPageAbortError(e)) throw e;
         steps.push('菜单点击链路异常：' + (e?.message || String(e)));
       }
     } else {
@@ -664,6 +690,7 @@
         steps.push('未找到 Vue Router 实例（vm=' + !!vm + '），降级到 history 兜底');
       }
     } catch (e) {
+      if (isPageAbortError(e)) throw e;
       steps.push('Vue Router 异常：' + (e?.message || String(e)));
     }
 
@@ -674,7 +701,8 @@
       window.dispatchEvent(new HashChangeEvent('hashchange'));
       steps.push('兜底 history.pushState：' + target);
     } catch (e) {
-      try { location.assign(target); steps.push('最兜底 location.assign：' + target); } catch (_) {}
+      if (isPageAbortError(e)) throw e;
+      try { location.assign(target); steps.push('最兜底 location.assign：' + target); } catch (e) { ignoreUnlessPageAbort(e); }
     }
     await sleep(450);
     return { ok: true, via: 'history-fallback', steps, href: location.href };
@@ -799,7 +827,7 @@
       // 单独立即打（单次点击量很少，不怕刷屏）
       // eslint-disable-next-line no-console
       console.log('[VA.submit]', eventName, payload || '');
-    } catch (_) {}
+    } catch (e) { ignoreUnlessPageAbort(e); }
   }
 
   function looksLikeAuditList() {
@@ -891,6 +919,7 @@
   async function waitForReady(timeoutMs = 15000) {
     const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || 15000);
     while (Date.now() < deadline) {
+      throwIfPageAborted();
       if (looksLikeAddForm()) {
         return {
           status: 'ready',
@@ -931,6 +960,7 @@
   }
 
   async function fillRecordedRow(row, options) {
+    throwIfPageAborted();
     const fieldsArr = Array.isArray(options?.fields) && options.fields.length ? options.fields.map(f => String(f)) : null;
     const fieldsSet = fieldsArr ? new Set(fieldsArr) : null;
     const excludeFields = Array.isArray(options?.excludeFields) && options.excludeFields.length
@@ -963,6 +993,7 @@
     let selectedBrand = '';
 
     for (const spec of orderedSpecs) {
+      throwIfPageAborted();
       // 白名单模式：不在白名单里就跳过（manual字段在探测模式下也跳过）
       if (fieldsSet && spec.kind !== 'manual' && !fieldsSet.has(spec.field)) continue;
       // 黑名单模式：明确排除的字段跳过（manual也照样排除，用于 Stage 2 避免重填探测过的字段）
@@ -980,6 +1011,7 @@
         // ★★【品牌复用优化】：如果 sidepanel 已经传了 confirmedBrandName（用户在车源新增页选过一次品牌），
         //    直接自动填品牌，不再弹提示条等用户手动选。第二次车源创建/创建车系车型前都已经带上了。
         const confirmedBrand = String(options?.confirmedBrandName || '').trim();
+        const requireFreshBrandSelection = !!options?.requireFreshBrandSelection;
         let rBrand;
         if (confirmedBrand) {
           const brandSpec = RECORDED_FLOW_FIELDS.find(s => s.field === 'brandName');
@@ -997,7 +1029,11 @@
         } else {
           const addFormScope = (typeof findAddFormRootScope === 'function') ? (findAddFormRootScope() || document.body) : document.body;
           rBrand = await ensureBrandSelected(addFormScope, {
-            suggestText: '请先手动选择品牌（车系/车型下拉按品牌联动加载，不选品牌下拉是空的，填了也找不到。选完后插件自动继续填剩余字段）',
+            requireFreshSelection: !!options?.requireFreshBrandSelection,
+            rowNumber: options?.brandSelectionRowNumber || row.rowNumber || '',
+            suggestText: options?.requireFreshBrandSelection
+              ? `请为第${options?.brandSelectionRowNumber || row.rowNumber || ''}行重新手动选择品牌（每一行都必须用本行车源上传时人工选的品牌，不能沿用上一行）。选完后插件自动继续。`
+              : '请先手动选择品牌（车系/车型下拉按品牌联动加载，不选品牌下拉是空的，填了也找不到。选完后插件自动继续填剩余字段）',
           });
           console.log('[VA 引导选品牌(车源新增页)]', rBrand.message);
           if (rBrand.ok && rBrand.value) selectedBrand = rBrand.value;
@@ -1078,6 +1114,7 @@
         if (spec.field === 'brandName') brandFilledOk = !!result.ok;
         await sleep(result.ok ? (spec.waitAfter || 260) : 220);
       } catch (e) {
+        if (isPageAbortError(e)) throw e;
         markControl(target, 'bad');
         report.push({
           field: spec.field,
@@ -1404,7 +1441,7 @@
             const rect = own.getBoundingClientRect?.();
             if (!rect || (rect.width > 0 && rect.height > 0)) return true;
           }
-        } catch (_) {}
+        } catch (e) { ignoreUnlessPageAbort(e); }
       }
     }
     // (a) 全局 root 级判断
@@ -1456,7 +1493,7 @@
             vm[k] = false;
             actions.push('set:' + k);
           }
-        } catch (_) {}
+        } catch (e) { ignoreUnlessPageAbort(e); }
       });
       // 2) 调关闭方法（注意顺序：handleClose / close 会更新内部状态再触发 v-model update）
       ['handleClose', 'close', 'closeDropdown', 'blurAll', 'blur'].forEach(m => {
@@ -1465,7 +1502,7 @@
             vm[m]();
             actions.push('call:' + m);
           }
-        } catch (_) {}
+        } catch (e) { ignoreUnlessPageAbort(e); }
       });
       // 3) 发 update:visible（visible 改变事件，只发 visible-change，不发 update:modelValue/update:value——后者会把其他 select 的 model 错误重置掉）
       ['update:visible', 'visible-change'].forEach(ev => {
@@ -1475,7 +1512,7 @@
             vc.__vueParentComponent.emit(ev, false);
           }
           actions.push('emit:' + ev + '=false');
-        } catch (_) {}
+        } catch (e) { ignoreUnlessPageAbort(e); }
       });
       return actions.length > 0;
     } catch (_) {
@@ -1502,10 +1539,10 @@
 
       // (2) blur root / input
       if (inner && document.activeElement === inner) {
-        try { inner.blur?.(); steps.push('blur-input'); } catch (_) {}
+        try { inner.blur?.(); steps.push('blur-input'); } catch (e) { ignoreUnlessPageAbort(e); }
       }
       if (rootEl && typeof rootEl.blur === 'function') {
-        try { rootEl.blur(); steps.push('blur-root'); } catch (_) {}
+        try { rootEl.blur(); steps.push('blur-root'); } catch (e) { ignoreUnlessPageAbort(e); }
       }
       await sleep(40);
       if (rootEl && !isDropdownOpen(rootEl)) return { closed: true, via: steps.join('+') };
@@ -1527,7 +1564,7 @@
             steps.push('nearby-click');
           }
         }
-      } catch (_) {}
+      } catch (e) { ignoreUnlessPageAbort(e); }
       await sleep(80);
       if (rootEl && !isDropdownOpen(rootEl)) return { closed: true, via: steps.join('+') };
 
@@ -1537,14 +1574,15 @@
           try {
             el.dispatchEvent(new KeyboardEvent('keydown', { key, code: key === 'Escape' ? 'Escape' : key, bubbles: true, cancelable: true }));
             el.dispatchEvent(new KeyboardEvent('keyup',   { key, code: key === 'Escape' ? 'Escape' : key, bubbles: true, cancelable: true }));
-          } catch (_) {}
+          } catch (e) { ignoreUnlessPageAbort(e); }
         };
         kd(inner || rootEl, 'Escape');
         steps.push('Esc-local');
-      } catch (_) {}
+      } catch (e) { ignoreUnlessPageAbort(e); }
       await sleep(120);
       return { closed: !isDropdownOpen(rootEl), via: steps.join('+') + (isDropdownOpen(rootEl) ? '-stillOpen' : '') };
-    } catch (_) {
+    } catch (e) {
+      if (isPageAbortError(e)) throw e;
       return { closed: !isDropdownOpen(rootEl), via: 'exception' };
     }
   }
@@ -1584,10 +1622,10 @@
       if (!option) {
         // 还是找不到 → 可能目标值根本不在下拉里 / 组件非 filterable 模式 / filter 时间还不够。
         // 先恢复 blur 避免影响下一步
-        try { input.blur?.(); } catch (_) {}
+        try { input.blur?.(); } catch (e) { ignoreUnlessPageAbort(e); }
         // ★ 找不到就必须关面板（不管 isDropdownOpen 函数判断成啥），防止刚才的 focus/input 触发了组件打开面板却没自己关
         //   之前：if (isDropdownOpen(root)) 才关 → 但归属面板判断可能出错（串到其他下拉上）→ 漏关 → 用户看面板一直开着
-        try { await ensureDropdownClosed(root, spec); } catch (_) {}
+        try { await ensureDropdownClosed(root, spec); } catch (e) { ignoreUnlessPageAbort(e); }
         return { ok: false, reason: 'option-not-found' };
       }
 
@@ -1601,10 +1639,11 @@
       const synced = syncVueSelectModel(root, option, optionText || value);
       // 再派发原生 change 兜底
       setTimeout(() => {
+        if (pageAbortRequested) return;
         try {
           if (input) { dispatch(input, 'input'); dispatch(input, 'change'); }
           dispatch(root, 'change');
-        } catch (_) {}
+        } catch (e) { ignoreUnlessPageAbort(e); }
       }, 220);
       await sleep(260);
       const after = readControlValue(root);
@@ -1637,6 +1676,7 @@
         silent: true,
       };
     } catch (e) {
+      if (isPageAbortError(e)) throw e;
       return { ok: false, reason: 'exception', error: e?.message || String(e) };
     }
   }
@@ -1775,7 +1815,7 @@
       if (typeof vm.currentLabel !== 'undefined') setters.push(v => { vm.currentLabel = String(valueText || rawValue || ''); });
 
       if (!setters.length && !hasEmit && !ctxEmit) return false;
-      setters.forEach(fn => { try { fn(rawValue); } catch (_) {} });
+      setters.forEach(fn => { try { fn(rawValue); } catch (e) { ignoreUnlessPageAbort(e); } });
 
       // 3) 发送 Vue 组件的响应式事件（'input' 对应 v-model，'change' 对应联动更新）
       const events = ['input', 'change', 'update:modelValue', 'update:value'];
@@ -1783,7 +1823,7 @@
         try {
           if (hasEmit) vm.$emit(ev, rawValue);
           else if (ctxEmit) ctxEmit(ev, rawValue);
-        } catch (_) {}
+        } catch (e) { ignoreUnlessPageAbort(e); }
       });
 
       // 4) ElementUI / Ant 会在 vm 里放 selectedOptions / multiple 支持，尽量也同步
@@ -1793,9 +1833,9 @@
           const fakeOpt = Object.assign({ value: rawValue, label: selectedLabel }, option.dataset || {});
           if (vm.multiple) vm.selectedOptions.push(fakeOpt);
           else vm.selectedOptions = [fakeOpt];
-        } catch (_) {}
+        } catch (e) { ignoreUnlessPageAbort(e); }
       } else if (typeof vm.selectedOptions !== 'undefined') {
-        try { vm.selectedOptions = [{ value: rawValue, label: selectedLabel }]; } catch (_) {}
+        try { vm.selectedOptions = [{ value: rawValue, label: selectedLabel }]; } catch (e) { ignoreUnlessPageAbort(e); }
       }
       return true;
     } catch (_) {
@@ -1817,6 +1857,7 @@
 
     // 事件派发兜底：在 root/control 上再派发原生 input/change，兼容不依赖 Vue 事件链的简单表单
     setTimeout(() => {
+      if (pageAbortRequested) return;
       try {
         const input = dropdownInput(root);
         if (input) {
@@ -1824,7 +1865,7 @@
           dispatch(input, 'change');
         }
         dispatch(root, 'change');
-      } catch (_) {}
+      } catch (e) { ignoreUnlessPageAbort(e); }
     }, 260);
 
     return {
@@ -1944,7 +1985,7 @@
       }
       const rid = ctrl.getAttribute?.('id');
       if (rid) attrIds.push(rid + '_list', rid + '-panel', rid + '_panel');
-    } catch (_) { /* ignore */ }
+    } catch (e) { ignoreUnlessPageAbort(e); /* ignore */ }
 
     for (const id of attrIds) {
       const panel = document.getElementById(id);
@@ -1953,7 +1994,7 @@
 
     // 坐标距离兜底
     let ctrlRect = null;
-    try { ctrlRect = ctrl.getBoundingClientRect?.(); } catch (_) {}
+    try { ctrlRect = ctrl.getBoundingClientRect?.(); } catch (e) { ignoreUnlessPageAbort(e); }
     if (!ctrlRect || (ctrlRect.width === 0 && ctrlRect.height === 0)) {
       // 控件还没测量出来（transition 中），fallback 到全局第一个可见面板（最差情况）
       return findDropdownPanelGlobal(kind, includeHiddenPanels);
@@ -2624,7 +2665,53 @@
     return String(value).replace(/["\\]/g, '\\$&');
   }
 
-  function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+  function resetPageAbort() {
+    pageAbortRequested = false;
+    pageAbortReason = '';
+  }
+
+  function throwIfPageAborted() {
+    if (pageAbortRequested) throw new PageAbortError(pageAbortReason || '页面自动化已中断');
+  }
+
+  function isPageAbortError(error) {
+    return error && (error.name === 'PageAbortError' || error.__aborted === true);
+  }
+
+  function ignoreUnlessPageAbort(error) {
+    if (isPageAbortError(error)) throw error;
+  }
+
+  function abortCurrentTask(reason) {
+    pageAbortRequested = true;
+    pageAbortReason = String(reason || '页面自动化已中断');
+    stopSubmitWatch('abort-current-task');
+    try { document.querySelectorAll('[data-va-modal-notice], [data-va-brand-hint], [data-va-manual-select]').forEach(n => n.parentNode?.removeChild?.(n)); } catch (e) { ignoreUnlessPageAbort(e); }
+    pageSleepEntries.forEach(entry => {
+      try { clearTimeout(entry.timer); } catch (e) { ignoreUnlessPageAbort(e); }
+      try { entry.reject(new PageAbortError(pageAbortReason)); } catch (e) { ignoreUnlessPageAbort(e); }
+    });
+    pageSleepEntries.clear();
+    return { status: 'aborted', reason: pageAbortReason };
+  }
+
+  function sleep(ms) {
+    throwIfPageAborted();
+    return new Promise((resolve, reject) => {
+      const entry = { timer: null, reject };
+      entry.timer = setTimeout(() => {
+        pageSleepEntries.delete(entry);
+        try { throwIfPageAborted(); } catch (e) { reject(e); return; }
+        resolve();
+      }, ms);
+      pageSleepEntries.add(entry);
+      if (pageAbortRequested) {
+        pageSleepEntries.delete(entry);
+        clearTimeout(entry.timer);
+        reject(new PageAbortError(pageAbortReason));
+      }
+    });
+  }
 
   // ==================== 车系/车型自动创建功能 ====================
 
@@ -2632,8 +2719,10 @@
    * 等待导航到目标路径（SPA路由变化）
    */
   async function waitForNavigation(targetPathHint, timeoutMs = 5000) {
+    throwIfPageAborted();
     const deadline = Date.now() + Math.max(800, Number(timeoutMs) || 5000);
     while (Date.now() < deadline) {
+      throwIfPageAborted();
       if (targetPathHint && location.href.includes(targetPathHint)) {
         await sleep(220);
         return { status: 'ok', href: location.href };
@@ -2728,7 +2817,7 @@
       try {
         const unfold = await ensureSubMenuExpanded(submenuCandidate, '车系管理|车型管理|品牌管理');
         logs.push(`    ·展开子菜单[${unfold.action}]：${unfold.message}`);
-      } catch (e) { logs.push(`    ·展开子菜单异常：${e?.message || String(e)}`); }
+      } catch (e) { if (isPageAbortError(e)) throw e; logs.push(`    ·展开子菜单异常：${e?.message || String(e)}`); }
       await sleep(150);
       // --- (2) 点车系管理/车型管理叶子 ---
       let leafClicked = false;
@@ -2736,7 +2825,7 @@
         const leaf = await clickLeafMenuItem(menuName);
         logs.push(`    ·点叶子：${leaf.ok ? leaf.message : '失败：'+leaf.message}`);
         leafClicked = !!leaf.ok;
-      } catch (e) { logs.push(`    ·点叶子异常：${e?.message || String(e)}`); }
+      } catch (e) { if (isPageAbortError(e)) throw e; logs.push(`    ·点叶子异常：${e?.message || String(e)}`); }
       // --- (3) 等 DOM 渲染：纯看内容，不看 URL（防止 pushState 后内容未加载） ---
       if (leafClicked) {
         const pollDeadline = Date.now() + 3500;
@@ -2752,7 +2841,7 @@
         try {
           const th = [...document.querySelectorAll('th,.ant-table-cell')].filter(isVisible).map(e => (e.innerText||'').trim()).filter(Boolean).slice(0, 10).join('|');
           lastSample = `可见表头前10=[${th}]`;
-        } catch (_) {}
+        } catch (e) { ignoreUnlessPageAbort(e); }
         logs.push(`    ·轮${round} DOM 渲染超时(3500ms) → ${lastSample || '未采集到表头'}`);
       }
       // 等 200ms 再下一轮重试（防止菜单动画导致叶子不在可视区）
@@ -2764,7 +2853,7 @@
       const allMenuVisible = [...document.querySelectorAll('a,li,.ant-menu-item,.ant-menu-submenu-title,[class*="menu-item"]')]
         .filter(isVisible).map(e => (e.innerText||'').trim()).filter(Boolean).slice(0, 25);
       debug = ` | 左侧可见菜单前25项=[${allMenuVisible.join(' > ')}]`;
-    } catch (_) {}
+    } catch (e) { ignoreUnlessPageAbort(e); }
     return { ok: false, logs, href: location.href, message: `3轮纯点击导航仍未能命中${menuName}（可能是子菜单未展开/叶子不可见，请手动点击左侧[车型库管理]→[${menuName}]后，点侧边栏【重填当前行】重试${debug}）` };
   }
 
@@ -2801,13 +2890,13 @@
               if (v && typeof v === 'object') return v;
             }
           }
-        } catch (_) {}
+        } catch (e) { ignoreUnlessPageAbort(e); }
         // 直接属性访问（有些框架会 defineProperty 到 node）
         for (let suffix = 0; suffix < 30; suffix++) {
           try {
             const val = node[k + String.fromCharCode(97 + (suffix % 26))]; // 扫不到就 break，下面走全局
             if (val && typeof val === 'object' && 'tag' in val) return val;
-          } catch (_) {}
+          } catch (e) { ignoreUnlessPageAbort(e); }
         }
       }
       // 2) Symbol：极少数用 Symbol 做 Fiber key
@@ -2817,7 +2906,7 @@
           const v = node[syms[s]];
           if (v && typeof v === 'object' && (v.tag !== undefined)) return v;
         }
-      } catch (_) {}
+      } catch (e) { ignoreUnlessPageAbort(e); }
       // 3) 终极：for...in 扫 node 所有可枚举属性（含 prototype 链），值是 object 且带 tag/memoizedProps 就是 Fiber
       try {
         for (let k in node) {
@@ -2825,9 +2914,9 @@
             const v = node[k];
             if (!v || typeof v !== 'object') continue;
             if (('tag' in v && 'memoizedProps' in v) || ('pendingProps' in v && 'return' in v)) return v;
-          } catch (_) {}
+          } catch (e) { ignoreUnlessPageAbort(e); }
         }
-      } catch (_) {}
+      } catch (e) { ignoreUnlessPageAbort(e); }
       return null;
     }
 
@@ -3013,7 +3102,7 @@
       titleRow.dispatchEvent(new MouseEvent('mouseup', { ...base }));
       titleRow.dispatchEvent(new MouseEvent('click', { ...base }));
       if (window.PointerEvent) titleRow.dispatchEvent(new PointerEvent('pointerup', { ...base }));
-      try { titleRow.click(); } catch (_) {}
+      try { titleRow.click(); } catch (e) { ignoreUnlessPageAbort(e); }
       return true;
     } catch (e) {
       robustClick(titleRow);
@@ -3058,7 +3147,7 @@
       if (window.PointerEvent) el.dispatchEvent(new PointerEvent('pointerup', { ...base }));
       el.focus?.();
       // 兜底：再 native click() 一次
-      try { el.click(); } catch (_) {}
+      try { el.click(); } catch (e) { ignoreUnlessPageAbort(e); }
       return true;
     } catch (e) {
       robustClick(el);
@@ -3081,14 +3170,14 @@
       try {
         reactOnClick({ stopPropagation: ()=>{}, preventDefault: ()=>{}, target: el, currentTarget: el });
         ok = true;
-      } catch (_) {}
+      } catch (e) { ignoreUnlessPageAbort(e); }
     }
     try {
       clickAtExactCenter(el);
       ok = true;
-    } catch (_) {}
+    } catch (e) { ignoreUnlessPageAbort(e); }
     if (!ok) {
-      try { robustClick(el); ok = true; } catch (_) {}
+      try { robustClick(el); ok = true; } catch (e) { ignoreUnlessPageAbort(e); }
     }
     return ok;
   }
@@ -3118,7 +3207,7 @@
         try {
           const leafs = [...el.querySelectorAll('.ant-menu-item,[class*="menu-item"]')].filter(isVisible).map(e => cleanText((e.innerText||'').slice(0,20))).filter(Boolean).slice(0,10);
           if (leafs.length) pieces.push(`  └ 叶子：${leafs.join('、')}`);
-        } catch (_) {}
+        } catch (e) { ignoreUnlessPageAbort(e); }
       }
     });
     // 2) 去重（因为同一个父菜单会被多个 DOM 节点命中）
@@ -3506,6 +3595,7 @@
   async function waitForModalRoot(timeoutMs = 4500) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
+      throwIfPageAborted();
       // 1) 优先：ant-modal 真正的弹窗（中间显示）
       const modal = document.querySelector('.ant-modal-root .ant-modal-wrap:not(.ant-modal-hidden), .ant-modal-wrap:not(.ant-modal-hidden)');
       if (modal && isVisible(modal)) return modal;
@@ -3752,7 +3842,7 @@
           control = controlRoot(el) || el;
           matchedBy = 'id';
         }
-      } catch (_) {}
+      } catch (e) { ignoreUnlessPageAbort(e); }
     }
 
     // Step 2: ID 找不到 → 用 label 文本在 scope 内兜底（Drawer 场景直接走这里）
@@ -3845,8 +3935,8 @@
                   });
                 }
                 // 抓完再关：局部关下拉（不再 document.body.click 全局 click-outside，会清掉用户已手动选的品牌！）
-                try { await ensureDropdownClosed(control, null); } catch (_) {}
-              } catch (_) {}
+                try { await ensureDropdownClosed(control, null); } catch (e) { ignoreUnlessPageAbort(e); }
+              } catch (e) { ignoreUnlessPageAbort(e); }
             }
             if (candidates.length) poolDiag = ` 【★下拉选项池(${candidates.length}项)：${candidates.slice(0, 20).map(s => '"' + s + '"').join('、')}${candidates.length > 20 ? ' ...(后略)' : ''}】`;
             else poolDiag = ' 【★下拉选项池：(面板未展开或无选项，请检查品牌/上级字段是否已联动)】';
@@ -3882,10 +3972,10 @@
                   vc.__vueParentComponent.emit('change', String(value));
                   vc.__vueParentComponent.emit('update:modelValue', String(value));
                 }
-              } catch (_) {}
+              } catch (e) { ignoreUnlessPageAbort(e); }
             }
           }
-        } catch (_) {}
+        } catch (e) { ignoreUnlessPageAbort(e); }
 
         realControl.blur?.();
         await sleep(waitAfter || 260);
@@ -3894,6 +3984,7 @@
 
       return { ok: false, message: `[${label || id}] 不支持的控件类型: ${realKind}`, matchedBy };
     } catch (e) {
+      if (isPageAbortError(e)) throw e;
       return { ok: required ? false : true, message: `[${label || id}] 填写异常：${e?.message || String(e)}` + (required ? '（必填）' : '（选填跳过）'), matchedBy };
     }
   }
@@ -3909,6 +4000,7 @@
    *   6) 提交
    */
   async function createSeries(payload) {
+    throwIfPageAborted();
     const { brandName, seriesName, vehicleType, brandConfirmed } = payload || {};
     if (!brandName) return { ok: false, message: '创建车系缺少品牌 brandName' };
     if (!seriesName) return { ok: false, message: '创建车系缺少车系名称 seriesName' };
@@ -3936,8 +4028,8 @@
       try {
         const cancBtn = findModalCancelButton(modal);
         if (cancBtn) { robustClick(cancBtn); await sleep(200); }
-        try { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true })); } catch (_) {}
-      } catch (_) {}
+        try { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true })); } catch (e) { ignoreUnlessPageAbort(e); }
+      } catch (e) { ignoreUnlessPageAbort(e); }
       return { ok: false, message: `打开的 Drawer 不是车系新增（hasSeriesName=${hasSeriesName} hasAnnouncementModel=${hasAnnouncementModel}），已自动关闭。请检查当前页是否真的在"车系管理"列表页后再点侧边栏【重填当前行】触发重试。` };
     }
 
@@ -4097,6 +4189,7 @@
    *   5) 提交
    */
   async function createModel(payload) {
+    throwIfPageAborted();
     const { brandName, seriesName, modelName, vehicleType, brandConfirmed } = payload || {};
     // ★ 品牌默认用户手动选（和售价、图片一样）；但如果 sidepanel 已传 brandConfirmed=true（车源新增页选过），则自动填品牌不再人工操作
     if (!seriesName) return { ok: false, message: '创建车型缺少车系 seriesName' };
@@ -4125,8 +4218,8 @@
       try {
         const cancBtn = findModalCancelButton(modal);
         if (cancBtn) { robustClick(cancBtn); await sleep(200); }
-        try { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true })); } catch (_) {}
-      } catch (_) {}
+        try { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true })); } catch (e) { ignoreUnlessPageAbort(e); }
+      } catch (e) { ignoreUnlessPageAbort(e); }
       return { ok: false, message: `打开的 Drawer 不是车型新增（hasModelName=${hasModelName} hasSeriesName=${hasSeriesName}），已自动关闭（很可能开成了"车系新增"抽屉=防串页上一层没拦住）。请核当前页是否真的在"车型管理"列表页后点侧边栏【重填当前行】重试。` };
     }
 
@@ -4152,7 +4245,7 @@
       try {
         const bc = findControlInModalByLabel(modal, /品牌/);
         if (bc) brandControl = controlRoot(bc) || bc;
-      } catch (_) {}
+      } catch (e) { ignoreUnlessPageAbort(e); }
       rBrand = {
         ok: !!rBrand?.ok,
         value: rBrand?.ok ? brandName : '',
@@ -4214,7 +4307,7 @@
             steps.push(`[联动前置] UI 兜底：品牌还未选择（当前值="${cleanBrandVal || '请选择'}"）→ 跳过品牌→车系联动刷新。如车系找不到，先手动选品牌让车系列表加载后再选车系即可（和售价一样提交前自己填好）。`);
           }
         }
-      } catch (_) {}
+      } catch (e) { ignoreUnlessPageAbort(e); }
     }
 
     const brandRefillSteps = [];
@@ -4222,6 +4315,7 @@
     // 只有 actualBrandControl 有值（=用户已在 UI 上选了品牌）时，才执行 3 轮品牌→车系联动刷新
     if (actualBrandControl) {
       for (let i = 1; i <= 3 && !brandRefreshed; i++) {
+      throwIfPageAborted();
         // (a) 触发品牌下拉重新选中 → 派发 change/input → Vue 重新拉取该品牌的车系接口
         try {
           const brandRoot = actualBrandControl;
@@ -4261,8 +4355,8 @@
               brandRefillSteps.push(`  ↳ 第${i}轮检查：车系名称下拉还找不到目标车系「${seriesName}」，等下一轮再试。`);
             }
             // 检查完一定关下拉
-            try { await ensureDropdownClosed(seriesRoot, { field: 'series_probe' }); } catch (_) {}
-          } catch (_) {}
+            try { await ensureDropdownClosed(seriesRoot, { field: 'series_probe' }); } catch (e) { ignoreUnlessPageAbort(e); }
+          } catch (e) { ignoreUnlessPageAbort(e); }
         }
       }
     }
@@ -4291,7 +4385,7 @@
               field: `brand_refresh_retry_${retry}`, label: '品牌-第'+retry+'次重选', kind: 'dropdown', required: false, waitAfter: 300,
             });
             steps.push(`    · 品牌第${retry}次重选：${r2.ok ? 'OK' : 'FAIL'} → ${r2.message}`);
-          } catch (_) {}
+          } catch (e) { ignoreUnlessPageAbort(e); }
         }
         await sleep(600);
         const retrySeries = await fillByIdOrLabel(modal, {
@@ -4384,7 +4478,7 @@
     const fire = (e) => {
       if (called) return;
       called = true;
-      try { handler(e); } catch (_) {}
+      try { handler(e); } catch (e) { ignoreUnlessPageAbort(e); }
     };
     // 1) 元素自身 bubble/capture
     element.addEventListener('click', fire, { passive: true, once: true });
@@ -4401,13 +4495,13 @@
         if (t === element || element.contains?.(t) || (typeof t.closest === 'function' && t.closest(getUniqueSelector(element)) === element)) {
           fire(e);
         }
-      } catch (_) {}
+      } catch (e) { ignoreUnlessPageAbort(e); }
     };
     document.addEventListener('click', docCapture, { capture: true, passive: true });
     return function off() {
-      try { element.removeEventListener('click', fire); } catch (_) {}
-      try { element.removeEventListener('click', fire, true); } catch (_) {}
-      try { document.removeEventListener('click', docCapture, true); } catch (_) {}
+      try { element.removeEventListener('click', fire); } catch (e) { ignoreUnlessPageAbort(e); }
+      try { element.removeEventListener('click', fire, true); } catch (e) { ignoreUnlessPageAbort(e); }
+      try { document.removeEventListener('click', docCapture, true); } catch (e) { ignoreUnlessPageAbort(e); }
     };
   }
 
@@ -4462,7 +4556,7 @@
       if (el) el.parentNode?.removeChild?.(el);
       // 兜底：清除所有
       document.querySelectorAll('[data-va-modal-notice]').forEach(n => n.parentNode?.removeChild?.(n));
-    } catch (_) {}
+    } catch (e) { ignoreUnlessPageAbort(e); }
   }
 
   // ==========================================================================
@@ -4474,6 +4568,7 @@
   //   4) 返回里还带 selectedBrandText 这种对 sidepanel 覆盖 row.brandName 用的字段
   // ==========================================================================
   async function waitForManualDropdown(scope, opts) {
+    throwIfPageAborted();
     const label = opts?.label || '品牌';
     const labelPattern = opts?.labelPattern || new RegExp(label || '品牌');
     const timeoutMs = opts?.timeoutMs || 10 * 60 * 1000; // 默认等 10 分钟（用户慢慢选）
@@ -4509,28 +4604,30 @@
       if (body && body.prepend) body.prepend(bar);
       else if (body && body.insertBefore) body.insertBefore(bar, body.firstChild);
       else if (scope.insertBefore) scope.insertBefore(bar, scope.firstChild);
-    } catch (_) {}
+    } catch (e) { ignoreUnlessPageAbort(e); }
 
     // ③ 滚动到下拉控件位置（方便用户马上看到，不用来回找）
-    try { root.scrollIntoView?.({ block: 'center', inline: 'nearest' }); } catch (_) {}
+    try { root.scrollIntoView?.({ block: 'center', inline: 'nearest' }); } catch (e) { ignoreUnlessPageAbort(e); }
     // 顺便给用户开一下下拉（省一次点击）
     try {
       const clicker = dropdownClickTarget(root);
       if (clicker) { robustClick(clicker); }
-    } catch (_) {}
+    } catch (e) { ignoreUnlessPageAbort(e); }
 
     // ④ 轮询等待用户选中（注意：下拉有时是"选完后值写入"会经过 Vue/React 异步，所以多等一轮）
     const deadline = Date.now() + timeoutMs;
     let lastEmptyVal = '';
     while (Date.now() < deadline) {
+      throwIfPageAborted();
+      throwIfPageAborted();
       const raw = readControlValue(root);
       const v = cleanText(String(raw || ''));
       const emptyHint = /^(请选择|请选择.*|未选择|undefined|null|placeholder|搜索|选择.*)$/;
       const hasValue = v && v.length > 0 && !emptyHint.test(v);
       if (hasValue) {
         // 选上了，清掉提示条，返回
-        try { const el = document.getElementById(barId); el?.parentNode?.removeChild?.(el); } catch (_) {}
-        try { document.querySelectorAll('[data-va-manual-select]').forEach(n => n.parentNode?.removeChild?.(n)); } catch (_) {}
+        try { const el = document.getElementById(barId); el?.parentNode?.removeChild?.(el); } catch (e) { ignoreUnlessPageAbort(e); }
+        try { document.querySelectorAll('[data-va-manual-select]').forEach(n => n.parentNode?.removeChild?.(n)); } catch (e) { ignoreUnlessPageAbort(e); }
         return { ok: true, value: v, control: root, message: `用户已手动选择「${labelText}」=${v}` };
       }
       lastEmptyVal = v || '(空)';
@@ -4538,8 +4635,8 @@
     }
 
     // 超时
-    try { const el = document.getElementById(barId); el?.parentNode?.removeChild?.(el); } catch (_) {}
-    try { document.querySelectorAll('[data-va-manual-select]').forEach(n => n.parentNode?.removeChild?.(n)); } catch (_) {}
+    try { const el = document.getElementById(barId); el?.parentNode?.removeChild?.(el); } catch (e) { ignoreUnlessPageAbort(e); }
+    try { document.querySelectorAll('[data-va-manual-select]').forEach(n => n.parentNode?.removeChild?.(n)); } catch (e) { ignoreUnlessPageAbort(e); }
     return { ok: false, value: '', message: `等待用户手动选择「${labelText}」超时（最后读取值=${lastEmptyVal}），请点侧边栏【重填当前行】重试` };
   }
 
@@ -4552,13 +4649,55 @@
   //   ✅ 超时时不强制 return 卡死（返回 ok=false 让调用方自己决定），你选品牌慢也不会报错
   //   ✅ 不把用户选中的品牌值写回 CSV row / payload（避免覆盖原值产生副作用），DOM 里选的品牌只在当前页面生效
   // ==========================================================================
+  function resetDropdownSelection(root) {
+    if (!root) return false;
+    let changed = false;
+    try {
+      const clearBtn = root.querySelector?.('.ant-select-clear, .el-icon-circle-close, .el-select__caret.is-reverse, [class*="clear"]')
+        || root.parentNode?.querySelector?.('.ant-select-clear, .el-icon-circle-close, [class*="clear"]');
+      if (clearBtn && isVisible(clearBtn)) {
+        robustClick(clearBtn);
+        changed = true;
+      }
+    } catch (e) { ignoreUnlessPageAbort(e); }
+    try {
+      const input = dropdownInput(root) || inputLike(root);
+      if (input) {
+        input.focus?.();
+        setNativeValue(input, '');
+        dispatch(input, 'input');
+        dispatch(input, 'change');
+        input.blur?.();
+        changed = true;
+      }
+    } catch (e) { ignoreUnlessPageAbort(e); }
+    try {
+      const selected = root.querySelector?.('.ant-select-selection-item, .ant-select-selection-selected-value, .el-select__tags-text, .ant-select-selection-item-content');
+      if (selected) selected.textContent = '';
+    } catch (e) { ignoreUnlessPageAbort(e); }
+    try {
+      const vc = findVueComponent(root);
+      const vm = vc && vc.__vue__ ? vc.__vue__ : vc;
+      if (vm) {
+        ['value', 'modelValue', 'currentValue', 'selected', 'selectedLabel', 'currentLabel'].forEach(k => {
+          try { if (typeof vm[k] !== 'undefined') vm[k] = ''; } catch (_) {}
+        });
+        try { if (typeof vm.$emit === 'function') { vm.$emit('input', ''); vm.$emit('change', ''); vm.$emit('update:modelValue', ''); } } catch (_) {}
+        changed = true;
+      }
+    } catch (e) { ignoreUnlessPageAbort(e); }
+    return changed;
+  }
+
   async function ensureBrandSelected(scope, opts) {
+    throwIfPageAborted();
     const labelPattern = opts?.labelPattern || /品牌/;
     // ★ 兼容两种字段名：调用处有的传 suggestText，有的传 suggestionText
     const suggestText = (opts?.suggestText || opts?.suggestionText)
       || '请先手动选择品牌（车系/车型数据按品牌联动加载，不选品牌找不到对应车系/车型，选完后自动继续）';
     const timeoutMs = opts?.timeoutMs || 5 * 60 * 1000; // 默认 5 分钟（你慢慢选）
     const pollIntervalMs = opts?.pollIntervalMs || 700;
+    const requireFreshSelection = !!opts?.requireFreshSelection;
     if (!scope) return { ok: false, value: '', message: 'ensureBrandSelected: scope 为空', control: null };
 
     // ① 找到品牌控件
@@ -4568,11 +4707,17 @@
     }
     const root = controlRoot(controlEl) || controlEl;
 
-    // ② 先快速检查一次：用户是不是已经选好品牌了？（如果之前自己选过，就直接跳过提示+轮询，别打扰）
+    // ② 快速检查：只有非强制本行重新选择时，才允许直接沿用当前已有值。
+    // 强制重新选择用于“下一行”隔离：页面可能残留上一行品牌，必须先清空并等待用户为本行重新选。
     try {
       const firstVal = cleanText(String(readControlValue(root) || ''));
       const emptyHint = /^(请选择|请选择.*|未选择|undefined|null|placeholder|搜索|选择.*)$/;
-      if (firstVal && firstVal.length > 0 && !emptyHint.test(firstVal)) {
+      if (requireFreshSelection) {
+        if (firstVal && firstVal.length > 0 && !emptyHint.test(firstVal)) {
+          resetDropdownSelection(root);
+          await sleep(250);
+        }
+      } else if (firstVal && firstVal.length > 0 && !emptyHint.test(firstVal)) {
         // ★ 直接返回前也要把手动选的品牌值同步到 Vue 层！否则后续重渲染还是会清空。
         try {
           let innerOpt = root.querySelector?.(
@@ -4580,10 +4725,10 @@
           );
           if (innerOpt) syncVueSelectModel(root, innerOpt, firstVal);
           else syncVueSelectModel(root, root, firstVal);
-        } catch (_) {}
+        } catch (e) { ignoreUnlessPageAbort(e); }
         return { ok: true, value: firstVal, control: root, message: `品牌已选好「${firstVal}」，直接继续。` };
       }
-    } catch (_) {}
+    } catch (e) { ignoreUnlessPageAbort(e); }
 
     // ③ 在表单顶部加一条浅蓝说明提示条（非强视觉）
     const body = (scope.querySelector?.('.ant-modal-body, .ant-drawer-body, [class*="drawer-body"], [class*="modal-body"]')
@@ -4605,18 +4750,26 @@
       if (body && body.prepend) body.prepend(bar);
       else if (body && body.insertBefore) body.insertBefore(bar, body.firstChild);
       else if (scope.insertBefore) scope.insertBefore(bar, scope.firstChild);
-    } catch (_) {}
+    } catch (e) { ignoreUnlessPageAbort(e); }
     // 滚动到品牌控件位置（方便你马上看到，不用来回找）—— 但不自动开下拉
-    try { root.scrollIntoView?.({ block: 'center', inline: 'nearest' }); } catch (_) {}
+    try { root.scrollIntoView?.({ block: 'center', inline: 'nearest' }); } catch (e) { ignoreUnlessPageAbort(e); }
 
     // ④ 轻量轮询等你选品牌
     const deadline = Date.now() + timeoutMs;
     let lastVal = '';
     while (Date.now() < deadline) {
+      throwIfPageAborted();
       const raw = readControlValue(root);
       const v = cleanText(String(raw || ''));
       const emptyHint = /^(请选择|请选择.*|未选择|undefined|null|placeholder|搜索|选择.*)$/;
       if (v && v.length > 0 && !emptyHint.test(v)) {
+        // 如果强制要求本行重新选择，但页面仍回显旧值，就继续等用户重新点一次，而不是直接沿用旧品牌。
+        if (requireFreshSelection && v === firstVal) {
+          resetDropdownSelection(root);
+          await sleep(pollIntervalMs);
+          lastVal = v || '(空/请选择)';
+          continue;
+        }
         // ★★★【关键修复】手动选的值还没同步到 Vue 层，立刻手动 syncVueSelectModel。
         //     否则后续填"常用车系/常用排序"等其他字段触发 Vue 响应式重渲染时，品牌会被还原成"请选择"！
         try {
@@ -4629,7 +4782,7 @@
                 '.ant-select-item-option-selected, .ant-select-dropdown-menu-item-selected, .el-select-dropdown__item.selected, [aria-selected="true"], [class*="selected"][role="option"]'
               );
             }
-          } catch (_) {}
+          } catch (e) { ignoreUnlessPageAbort(e); }
           // 再查控件内部已有 selectedItem（关闭面板后 DOM 也能找到）
           if (!brandOption) {
             brandOption = root.querySelector?.(
@@ -4642,10 +4795,10 @@
             // 兜底：用控件自身+显示文本强行同步（syncVueSelectModel 走显示文本分支）
             syncVueSelectModel(root, root, v);
           }
-        } catch (_) {}
+        } catch (e) { ignoreUnlessPageAbort(e); }
         // 清提示条
-        try { const el = document.getElementById(barId); el?.parentNode?.removeChild?.(el); } catch (_) {}
-        try { document.querySelectorAll('[data-va-brand-hint]').forEach(n => n.parentNode?.removeChild?.(n)); } catch (_) {}
+        try { const el = document.getElementById(barId); el?.parentNode?.removeChild?.(el); } catch (e) { ignoreUnlessPageAbort(e); }
+        try { document.querySelectorAll('[data-va-brand-hint]').forEach(n => n.parentNode?.removeChild?.(n)); } catch (e) { ignoreUnlessPageAbort(e); }
         return { ok: true, value: v, control: root, message: `你已手动选择品牌「${v}」，已同步 Vue 层防止后续重渲染清空。` };
       }
       lastVal = v || '(空/请选择)';
@@ -4653,8 +4806,8 @@
     }
 
     // 超时：清提示条，返回 ok=false（不强制卡流程，调用方自行处理）
-    try { const el = document.getElementById(barId); el?.parentNode?.removeChild?.(el); } catch (_) {}
-    try { document.querySelectorAll('[data-va-brand-hint]').forEach(n => n.parentNode?.removeChild?.(n)); } catch (_) {}
+    try { const el = document.getElementById(barId); el?.parentNode?.removeChild?.(el); } catch (e) { ignoreUnlessPageAbort(e); }
+    try { document.querySelectorAll('[data-va-brand-hint]').forEach(n => n.parentNode?.removeChild?.(n)); } catch (e) { ignoreUnlessPageAbort(e); }
     return { ok: false, value: '', control: root, message: `等你手动选品牌超时（最后读取值=${lastVal}），调用方将继续后续流程。如车系/车型找不到，请你手动选品牌后重新触发填充（侧边栏点【重填当前行】）。` };
   }
 
@@ -4676,12 +4829,15 @@
    *   - label: string         错误信息里的标签（如"车系「解放J6P」"）
    */
   async function waitForCreateSuccess(modalScope, opts) {
+    throwIfPageAborted();
     const timeoutMs = (opts && opts.timeoutMs) ? opts.timeoutMs : 12000;
     const ctx = (opts && opts.manualContext) || {};
     const label = (opts && opts.label) ? opts.label : '创建';
     const deadline = Date.now() + timeoutMs;
     let pollCount = 0;
     while (Date.now() < deadline) {
+      throwIfPageAborted();
+      throwIfPageAborted();
       pollCount += 1;
       const successText = visibleSuccessText();
       if (successText) return { ok: true, message: successText, via: 'toast' };
@@ -4743,6 +4899,7 @@
    * }
    */
   async function navigateAndCreate(payload) {
+    throwIfPageAborted();
     const { kind, skipReturnToAddPage = false, switchToModelAfterSeriesCreated = false } = payload || {};
     if (kind !== 'series' && kind !== 'model') {
       return { ok: false, message: 'navigateAndCreate 需要指定 kind 为 series 或 model' };
