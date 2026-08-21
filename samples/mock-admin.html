@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>车源管理端 Mock 页面</title>
+  <style>
+    body { font-family: sans-serif; margin: 24px; background: #f5f7fb; color: #243042; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(280px, 1fr)); gap: 16px; max-width: 1100px; }
+    .card { background: #fff; border: 1px solid #dbe4ee; border-radius: 16px; padding: 16px; box-shadow: 0 8px 20px rgba(16, 32, 48, 0.05); }
+    label { display: block; font-weight: 700; margin: 10px 0 6px; }
+    input, select, textarea { width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid #cfd9e4; border-radius: 10px; font: inherit; }
+    textarea { min-height: 110px; }
+    .hint { color: #6d7d90; font-size: 12px; margin-top: 4px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .full { grid-column: 1 / -1; }
+  </style>
+</head>
+<body>
+  <h1>车源管理端 Mock 页面</h1>
+  <p>打开这个页面后，先安装扩展，再点击侧边栏里的“探测当前页面 / 填当前行”。</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>基础信息</h2>
+      <label for="brand">品牌</label>
+      <select id="brand" name="brand">
+        <option value="">请选择品牌</option>
+        <option>奥迪</option>
+        <option>宝马</option>
+        <option>丰田</option>
+      </select>
+
+      <label for="series">车系</label>
+      <select id="series" name="series">
+        <option value="">请选择车系</option>
+        <option>A6L</option>
+        <option>3系</option>
+        <option>凯美瑞</option>
+      </select>
+
+      <label for="model">车型</label>
+      <select id="model" name="model">
+        <option value="">请选择车型</option>
+        <option>A6L</option>
+        <option>320Li</option>
+        <option>凯美瑞</option>
+      </select>
+
+      <label for="config">子类 / 配置</label>
+      <input id="config" name="config" placeholder="2020款 45 TFSI 臻选动感型" />
+
+      <label for="vehicleType">车辆类型</label>
+      <select id="vehicleType" name="vehicleType">
+        <option value="">请选择车辆类型</option>
+        <option>轿车</option>
+        <option>SUV</option>
+        <option>MPV</option>
+      </select>
+
+      <label for="year">年款</label>
+      <input id="year" name="year" placeholder="2020" />
+    </div>
+
+    <div class="card">
+      <h2>客观字段</h2>
+      <div class="row">
+        <div>
+          <label for="vin">VIN</label>
+          <input id="vin" name="vin" placeholder="车架号" />
+        </div>
+        <div>
+          <label for="engineNo">发动机号</label>
+          <input id="engineNo" name="engineNo" placeholder="发动机号" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="registerDate">登记日期</label>
+          <input id="registerDate" name="registerDate" type="date" />
+        </div>
+        <div>
+          <label for="mileage">里程</label>
+          <input id="mileage" name="mileage" type="number" placeholder="45800" />
+        </div>
+      </div>
+
+      <label for="title">标题</label>
+      <input id="title" name="title" placeholder="车源标题" />
+
+      <label for="color">颜色</label>
+      <input id="color" name="color" placeholder="黑色" />
+
+      <label for="emissionStandard">排放标准</label>
+      <input id="emissionStandard" name="emissionStandard" placeholder="国六" />
+
+      <label for="fuelType">燃料类型</label>
+      <select id="fuelType" name="fuelType">
+        <option value="">请选择燃料类型</option>
+        <option>汽油</option>
+        <option>柴油</option>
+        <option>纯电</option>
+        <option>插电混动</option>
+      </select>
+
+      <label for="gearbox">变速箱</label>
+      <select id="gearbox" name="gearbox">
+        <option value="">请选择变速箱</option>
+        <option>自动</option>
+        <option>手动</option>
+        <option>CVT</option>
+      </select>
+    </div>
+
+    <div class="card full">
+      <h2>车况描述</h2>
+      <label for="description">车况说明</label>
+      <textarea id="description" name="description" placeholder="请人工填写图片、定价和车况描述"></textarea>
+      <div class="hint">这个 mock 页面专门留给扩展 smoke test 使用。品牌、车系、车型、VIN、发动机号、登记日期、里程、标题、颜色、排放、燃料、变速箱都能被探测。</div>
+    </div>
+  </div>
+</body>
+</html>

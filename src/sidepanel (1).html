@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>车源录入助手</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+  <style>
+    #__bootErrors {
+      position: sticky; top: 0; z-index: 99999;
+      background: #b91c1c; color: #fff; padding: 10px 14px;
+      font-family: system-ui,-apple-system,"Segoe UI",sans-serif;
+      font-size: 13px; line-height: 1.5; display: none;
+      border-bottom: 2px solid #7f1d1d; white-space: pre-wrap; word-break: break-all;
+    }
+    #__bootErrors.show { display: block; }
+    #__bootErrors b { display:block; margin-bottom: 4px; font-weight: 600; }
+    #__bootErrors code { background: rgba(0,0,0,.25); padding: 2px 6px; border-radius: 4px; }
+  </style>
+  <script>
+    // ============ 启动阶段错误可见化（任何脚本报错都立刻显示大红色块）============
+    (function () {
+      var box = document.createElement('div');
+      box.id = '__bootErrors';
+      var title = document.createElement('b');
+      title.textContent = '插件启动错误：';
+      box.appendChild(title);
+      var body = document.body || document.documentElement;
+      body.insertBefore(box, body.firstChild);
+
+      var lines = [];
+      function show(msg) {
+        lines.push(String(msg || ''));
+        box.innerHTML = '<b>插件启动错误（' + lines.length + ' 条）：</b>' +
+          lines.map(function (s) { return '<div>• ' + String(s).replace(/[<>&]/g, function (c) { return ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c]; }) + '</div>'; }).join('');
+        box.classList.add('show');
+      }
+      window.addEventListener('error', function (e) {
+        show('脚本错误：' + (e.error && e.error.stack ? e.error.stack : (e.message || '未知错误')) + '  位置：' + (e.filename || '') + ':' + (e.lineno || '') + ':' + (e.colno || ''));
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        var info = (e.reason && (e.reason.stack || e.reason.message || e.reason)) || String(e.reason || 'Promise rejected');
+        show('异步 Promise 未捕获：' + info);
+      });
+      window.__bootError = show;
+    })();
+
+    function __scriptLoadFail(src) {
+      window.__bootError('脚本加载失败：<code>' + src + '</code> — 请在 chrome://extensions 点击插件重载或检查文件是否存在。');
+    }
+  </script>
+</head>
+<body>
+  <header class="hero">
+    <div>
+      <p class="eyebrow">Vehicle Upload Assistant</p>
+      <h1>车源录入助手</h1>
+      <p>按录制流程批量填基础信息；图片、售价和提交由人工处理 → 提交成功自动下一条</p>
+    </div>
+    <span id="statusBadge" class="status-badge">待导入</span>
+  </header>
+
+  <main>
+    <section class="card import-card">
+      <div class="section-title">
+        <span class="step">01</span>
+        <div>
+          <h2>数据导入 · 原文件预览</h2>
+          <p>仅支持「已有对应车型」的 CSV / Excel 数据；下方表格即为原文件内容</p>
+        </div>
+      </div>
+
+      <label class="file-drop" for="dataFile">
+        <input id="dataFile" type="file" accept=".csv,text/csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" />
+        <span class="file-icon">↑</span>
+        <strong id="fileName">选择 CSV / Excel 文件</strong>
+        <small>表头按录制流程：车辆类型、是否带挂、车主手机号、VIN、车身颜色、表显里程、上牌日期、车籍所在地、停放地区、车籍性质、过户信息、品牌、车系、车型、参考底价、参考售价</small>
+      </label>
+
+      <div class="row">
+        <button id="btnClear" class="danger ghost">清空</button>
+      </div>
+      <div id="tablePreview" class="table-preview"></div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">
+        <span class="step">02</span>
+        <div>
+          <h2>批量录入控制</h2>
+          <p>开始 → 自动进新增页并填当前行 → 人工上传图片/填售价/点提交 → 插件自动下一条</p>
+        </div>
+      </div>
+
+      <div class="safe-note">安全边界：插件不会上传图片，不会填写售价，不会点击提交。提交成功后才自动进入下一条。</div>
+      <label for="addPageUrl">新增库存车页面地址</label>
+      <input id="addPageUrl" placeholder="http://test.forjtruck.com/vehicle-source/approval?showPageModel=1" />
+      <div id="batchSummary" class="summary">批量录入未开始</div>
+      <div id="manualHint" class="manual-hint hidden"></div>
+
+      <div class="row">
+        <button id="btnStartBatch">开始 / 继续</button>
+        <button id="btnPauseBatch" class="secondary">暂停</button>
+        <button id="btnManualNext" class="secondary">我已提交，下一条</button>
+        <button id="btnStopBatch" class="danger ghost">停止</button>
+      </div>
+      <div class="row nav-row">
+        <button id="btnPrev" class="secondary">上一行</button>
+        <button id="btnRefillCurrent" class="secondary">重填当前行</button>
+        <button id="btnNext" class="secondary">下一行</button>
+      </div>
+    </section>
+
+    <section class="card log-card">
+      <div class="section-title compact">
+        <span class="step">LOG</span>
+        <div>
+          <h2>运行日志</h2>
+          <p>导入、填表、等待提交、自动下一条留痕</p>
+        </div>
+      </div>
+      <button id="btnClearLog" class="secondary">清空日志</button>
+      <div id="log" class="log"></div>
+    </section>
+  </main>
+
+  <script src="lib/parser.js" onerror="__scriptLoadFail('lib/parser.js')"></script>
+  <script src="lib/mapper.js" onerror="__scriptLoadFail('lib/mapper.js')"></script>
+  <script src="lib/store.js" onerror="__scriptLoadFail('lib/store.js')"></script>
+  <script src="sidepanel.js" onerror="__scriptLoadFail('sidepanel.js')"></script>
+</body>
+</html>
