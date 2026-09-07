@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "车源录入助手",
+  "version": "0.3.0",
+  "description": "第一代车源录入半自动助手：CSV/Excel导入、AI标准化、页面探测、当前行填表，不自动提交。",
+  "action": {
+    "default_title": "车源录入助手"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel.html"
+  },
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "tabs",
+    "scripting",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content-admin.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

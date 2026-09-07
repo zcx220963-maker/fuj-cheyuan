@@ -1,0 +1,561 @@
+{
+    "title": "Recording 2026/8/20 at 08:43:13",
+    "steps": [
+        {
+            "type": "setViewport",
+            "width": 2727,
+            "height": 300,
+            "deviceScaleFactor": 1,
+            "isMobile": false,
+            "hasTouch": false,
+            "isLandscape": false
+        },
+        {
+            "type": "navigate",
+            "url": "http://test.forjtruck.com/overview/dashboard",
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "http://test.forjtruck.com/overview/dashboard",
+                    "title": "赋界二手车后台管理系统"
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "li.ant-menu-submenu-active > div > span"
+                ],
+                [
+                    "xpath///*[@id=\"app\"]/div/section/section/aside/div/ul/li[2]/ul/li[3]/div/span"
+                ],
+                [
+                    "pierce/li.ant-menu-submenu-active > div > span"
+                ],
+                [
+                    "text/车型库管理"
+                ]
+            ],
+            "offsetY": 20.0333251953125,
+            "offsetX": 46.99999809265137
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/plus 新增"
+                ],
+                [
+                    "div.table-card button.ant-btn-default"
+                ],
+                [
+                    "xpath///*[@id=\"app\"]/div/section/section/section/main/div[2]/div/div/div/div/div/div[2]/div[1]/div/button[1]"
+                ],
+                [
+                    "pierce/div.table-card button.ant-btn-default"
+                ]
+            ],
+            "offsetY": 19,
+            "offsetX": 17.316650390625
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "div:nth-of-type(4) form > div > div:nth-of-type(2) input"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_brandId\"]"
+                ],
+                [
+                    "pierce/div:nth-of-type(4) form > div > div:nth-of-type(2) input"
+                ]
+            ],
+            "offsetY": 24.866653442382812,
+            "offsetX": 16.13330078125
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "div.ant-select-item-option-active > div"
+                ],
+                [
+                    "xpath//html/body/div[5]/div/div/div/div[2]/div[1]/div/div/div[1]/div"
+                ],
+                [
+                    "pierce/div.ant-select-item-option-active > div"
+                ]
+            ],
+            "offsetY": 16.999984741210938,
+            "offsetX": 32
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/* 车系名称 :"
+                ],
+                [
+                    "#myForm_seriesName"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_seriesName\"]"
+                ],
+                [
+                    "pierce/#myForm_seriesName"
+                ]
+            ],
+            "offsetY": 11.866653442382812,
+            "offsetX": 32.13330078125
+        },
+        {
+            "type": "change",
+            "value": "c",
+            "selectors": [
+                [
+                    "aria/* 车系名称 :"
+                ],
+                [
+                    "#myForm_seriesName"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_seriesName\"]"
+                ],
+                [
+                    "pierce/#myForm_seriesName"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "c",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "che",
+            "selectors": [
+                [
+                    "aria/* 车系名称 :"
+                ],
+                [
+                    "#myForm_seriesName"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_seriesName\"]"
+                ],
+                [
+                    "pierce/#myForm_seriesName"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "h",
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "Process",
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "e",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "ch",
+            "selectors": [
+                [
+                    "aria/* 车系名称 :"
+                ],
+                [
+                    "#myForm_seriesName"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_seriesName\"]"
+                ],
+                [
+                    "pierce/#myForm_seriesName"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "Backspace",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "c",
+            "selectors": [
+                [
+                    "aria/* 车系名称 :"
+                ],
+                [
+                    "#myForm_seriesName"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_seriesName\"]"
+                ],
+                [
+                    "pierce/#myForm_seriesName"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "Backspace",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "ce",
+            "selectors": [
+                [
+                    "aria/* 车系名称 :"
+                ],
+                [
+                    "#myForm_seriesName"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_seriesName\"]"
+                ],
+                [
+                    "pierce/#myForm_seriesName"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "e",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "ce's",
+            "selectors": [
+                [
+                    "aria/* 车系名称 :"
+                ],
+                [
+                    "#myForm_seriesName"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_seriesName\"]"
+                ],
+                [
+                    "pierce/#myForm_seriesName"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "s",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "测试",
+            "selectors": [
+                [
+                    "aria/* 车系名称 :"
+                ],
+                [
+                    "#myForm_seriesName"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_seriesName\"]"
+                ],
+                [
+                    "pierce/#myForm_seriesName"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": " ",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "测试c",
+            "selectors": [
+                [
+                    "aria/* 车系名称 :"
+                ],
+                [
+                    "#myForm_seriesName"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_seriesName\"]"
+                ],
+                [
+                    "pierce/#myForm_seriesName"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "c",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "测试ch",
+            "selectors": [
+                [
+                    "aria/* 车系名称 :"
+                ],
+                [
+                    "#myForm_seriesName"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_seriesName\"]"
+                ],
+                [
+                    "pierce/#myForm_seriesName"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "h",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "测试che",
+            "selectors": [
+                [
+                    "aria/* 车系名称 :"
+                ],
+                [
+                    "#myForm_seriesName"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_seriesName\"]"
+                ],
+                [
+                    "pierce/#myForm_seriesName"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "e",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "测试che'x",
+            "selectors": [
+                [
+                    "aria/* 车系名称 :"
+                ],
+                [
+                    "#myForm_seriesName"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_seriesName\"]"
+                ],
+                [
+                    "pierce/#myForm_seriesName"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "x",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "测试车系",
+            "selectors": [
+                [
+                    "aria/* 车系名称 :"
+                ],
+                [
+                    "#myForm_seriesName"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_seriesName\"]"
+                ],
+                [
+                    "pierce/#myForm_seriesName"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": " ",
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "div:nth-of-type(4) div > div:nth-of-type(4) input"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_typeLevel\"]"
+                ],
+                [
+                    "pierce/div:nth-of-type(4) div > div:nth-of-type(4) input"
+                ]
+            ],
+            "offsetY": 3.7333221435546875,
+            "offsetX": 41.13330078125
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "#\\31 4 > div"
+                ],
+                [
+                    "xpath///*[@id=\"14\"]/div"
+                ],
+                [
+                    "pierce/#\\31 4 > div"
+                ],
+                [
+                    "text/牵引车"
+                ]
+            ],
+            "offsetY": 3,
+            "offsetX": 28
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/* 常用车系 :"
+                ],
+                [
+                    "#myForm_commonlyUsedSeries"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_commonlyUsedSeries\"]"
+                ],
+                [
+                    "pierce/#myForm_commonlyUsedSeries"
+                ]
+            ],
+            "offsetY": 19.733306884765625,
+            "offsetX": 32.13330078125
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "div:nth-of-type(7) div.ant-select-item-option-active > div"
+                ],
+                [
+                    "xpath//html/body/div[7]/div/div/div/div[2]/div[1]/div/div/div[1]/div"
+                ],
+                [
+                    "pierce/div:nth-of-type(7) div.ant-select-item-option-active > div"
+                ]
+            ],
+            "offsetY": 6.999969482421875,
+            "offsetX": 37
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/* 常用排序 :"
+                ],
+                [
+                    "#myForm_sortField"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_sortField\"]"
+                ],
+                [
+                    "pierce/#myForm_sortField"
+                ]
+            ],
+            "offsetY": 16.733306884765625,
+            "offsetX": 52.13330078125
+        },
+        {
+            "type": "change",
+            "value": "1",
+            "selectors": [
+                [
+                    "aria/* 常用排序 :"
+                ],
+                [
+                    "#myForm_sortField"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_sortField\"]"
+                ],
+                [
+                    "pierce/#myForm_sortField"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/提交"
+                ],
+                [
+                    "div:nth-of-type(4) button.ant-btn-primary"
+                ],
+                [
+                    "xpath//html/body/div[4]/div/div[2]/div/div/div[3]/button[2]"
+                ],
+                [
+                    "pierce/div:nth-of-type(4) button.ant-btn-primary"
+                ]
+            ],
+            "offsetY": 5.46661376953125,
+            "offsetX": 24.199951171875
+        },
+        {
+            "type": "navigate",
+            "url": "http://test.forjtruck.com/model/series",
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "http://test.forjtruck.com/model/series",
+                    "title": "赋界二手车后台管理系统"
+                }
+            ]
+        }
+    ]
+}

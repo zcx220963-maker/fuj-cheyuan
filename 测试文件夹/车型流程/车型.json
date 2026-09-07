@@ -1,0 +1,448 @@
+{
+    "title": "车型",
+    "steps": [
+        {
+            "type": "setViewport",
+            "width": 2727,
+            "height": 300,
+            "deviceScaleFactor": 1,
+            "isMobile": false,
+            "hasTouch": false,
+            "isLandscape": false
+        },
+        {
+            "type": "navigate",
+            "url": "http://test.forjtruck.com/model/series",
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "http://test.forjtruck.com/model/series",
+                    "title": "赋界二手车后台管理系统"
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/车型管理[role=\"link\"]"
+                ],
+                [
+                    "li.ant-menu-item-active a"
+                ],
+                [
+                    "xpath///*[@id=\"sub_menu_3_$$_menu47-popup\"]/li[3]/span/a"
+                ],
+                [
+                    "pierce/li.ant-menu-item-active a"
+                ],
+                [
+                    "text/车型管理"
+                ]
+            ],
+            "offsetY": 8.36663818359375,
+            "offsetX": 33.999996185302734
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/plus 新增",
+                    "aria/[role=\"generic\"]"
+                ],
+                [
+                    "div.topBtn span:nth-of-type(2)"
+                ],
+                [
+                    "xpath///*[@id=\"app\"]/div/section/section/section/main/div[2]/div/div/div/div/div/div[2]/div[1]/div/button/span[2]"
+                ],
+                [
+                    "pierce/div.topBtn span:nth-of-type(2)"
+                ],
+                [
+                    "text/新增"
+                ]
+            ],
+            "offsetY": 15.86663818359375,
+            "offsetX": 17.199951171875
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "div:nth-of-type(5) form > div > div:nth-of-type(2) input"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_brandId\"]"
+                ],
+                [
+                    "pierce/div:nth-of-type(5) form > div > div:nth-of-type(2) input"
+                ]
+            ],
+            "offsetY": 13.866653442382812,
+            "offsetX": 71.13330078125
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "div.ant-select-item-option-active > div"
+                ],
+                [
+                    "xpath//html/body/div[6]/div/div/div/div[2]/div[1]/div/div/div[1]/div"
+                ],
+                [
+                    "pierce/div.ant-select-item-option-active > div"
+                ],
+                [
+                    "text/一汽解放"
+                ]
+            ],
+            "offsetY": 10.999984741210938,
+            "offsetX": 65
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "div:nth-of-type(5) div:nth-of-type(3) input"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_seriesId\"]"
+                ],
+                [
+                    "pierce/div:nth-of-type(5) div:nth-of-type(3) input"
+                ]
+            ],
+            "offsetY": 17.866653442382812,
+            "offsetX": 51.13330078125
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "#\\31 1503 > div"
+                ],
+                [
+                    "xpath///*[@id=\"11503\"]/div"
+                ],
+                [
+                    "pierce/#\\31 1503 > div"
+                ]
+            ],
+            "offsetY": 6.9999847412109375,
+            "offsetX": 58
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/请输入"
+                ],
+                [
+                    "div:nth-of-type(5) textarea"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_modelName\"]"
+                ],
+                [
+                    "pierce/div:nth-of-type(5) textarea"
+                ]
+            ],
+            "offsetY": 22.933319091796875,
+            "offsetX": 63.199951171875
+        },
+        {
+            "type": "change",
+            "value": "c",
+            "selectors": [
+                [
+                    "aria/请输入"
+                ],
+                [
+                    "div:nth-of-type(5) textarea"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_modelName\"]"
+                ],
+                [
+                    "pierce/div:nth-of-type(5) textarea"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "c",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "ce",
+            "selectors": [
+                [
+                    "aria/请输入"
+                ],
+                [
+                    "div:nth-of-type(5) textarea"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_modelName\"]"
+                ],
+                [
+                    "pierce/div:nth-of-type(5) textarea"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "e",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "ce's",
+            "selectors": [
+                [
+                    "aria/请输入"
+                ],
+                [
+                    "div:nth-of-type(5) textarea"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_modelName\"]"
+                ],
+                [
+                    "pierce/div:nth-of-type(5) textarea"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "s",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "测试",
+            "selectors": [
+                [
+                    "aria/请输入"
+                ],
+                [
+                    "div:nth-of-type(5) textarea"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_modelName\"]"
+                ],
+                [
+                    "pierce/div:nth-of-type(5) textarea"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": " ",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "测试c",
+            "selectors": [
+                [
+                    "aria/请输入"
+                ],
+                [
+                    "div:nth-of-type(5) textarea"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_modelName\"]"
+                ],
+                [
+                    "pierce/div:nth-of-type(5) textarea"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "c",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "测试ch",
+            "selectors": [
+                [
+                    "aria/请输入"
+                ],
+                [
+                    "div:nth-of-type(5) textarea"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_modelName\"]"
+                ],
+                [
+                    "pierce/div:nth-of-type(5) textarea"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "h",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "测试che",
+            "selectors": [
+                [
+                    "aria/请输入"
+                ],
+                [
+                    "div:nth-of-type(5) textarea"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_modelName\"]"
+                ],
+                [
+                    "pierce/div:nth-of-type(5) textarea"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "e",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "测试che'x",
+            "selectors": [
+                [
+                    "aria/请输入"
+                ],
+                [
+                    "div:nth-of-type(5) textarea"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_modelName\"]"
+                ],
+                [
+                    "pierce/div:nth-of-type(5) textarea"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "x",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "测试车型",
+            "selectors": [
+                [
+                    "aria/请输入"
+                ],
+                [
+                    "div:nth-of-type(5) textarea"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_modelName\"]"
+                ],
+                [
+                    "pierce/div:nth-of-type(5) textarea"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": " ",
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "div:nth-of-type(5) div > div:nth-of-type(5) input"
+                ],
+                [
+                    "xpath///*[@id=\"myForm_typeLevel\"]"
+                ],
+                [
+                    "pierce/div:nth-of-type(5) div > div:nth-of-type(5) input"
+                ]
+            ],
+            "offsetY": 23.733306884765625,
+            "offsetX": 95.13330078125
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "#\\31 4 > div"
+                ],
+                [
+                    "xpath///*[@id=\"14\"]/div"
+                ],
+                [
+                    "pierce/#\\31 4 > div"
+                ]
+            ],
+            "offsetY": 9.999969482421875,
+            "offsetX": 82
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/提交",
+                    "aria/[role=\"generic\"]"
+                ],
+                [
+                    "button.ant-btn-primary > span"
+                ],
+                [
+                    "xpath//html/body/div[5]/div/div[2]/div/div/div[3]/button[2]/span"
+                ],
+                [
+                    "pierce/button.ant-btn-primary > span"
+                ],
+                [
+                    "text/提交"
+                ]
+            ],
+            "offsetY": 9.066650390625,
+            "offsetX": 14.199951171875
+        },
+        {
+            "type": "navigate",
+            "url": "http://test.forjtruck.com/model/model",
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "http://test.forjtruck.com/model/model",
+                    "title": "赋界二手车后台管理系统"
+                }
+            ]
+        }
+    ]
+}
